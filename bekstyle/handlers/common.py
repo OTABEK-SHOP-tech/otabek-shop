@@ -10,7 +10,7 @@ from bekstyle import texts as t
 from bekstyle.db import User, async_session, get_setting
 from bekstyle.handlers import menu_for
 from bekstyle.handlers.catalog import send_product
-from bekstyle.keyboards import main_menu
+from bekstyle.keyboards import main_menu, start_inline_kb
 from bekstyle.notify import banner_photo, remember_banner
 from bekstyle.services import claim_ownership
 
@@ -78,8 +78,9 @@ async def on_start(message: Message, command: CommandObject, state: FSMContext) 
             return
         await message.answer("Bu model endi mavjud emas. Katalogdan boshqasini tanlang 👇")
     photo = banner_photo()
-    sent = await message.answer_photo(photo, caption=t.greeting(tg_user.first_name), reply_markup=menu)
+    sent = await message.answer_photo(photo, caption=t.greeting(tg_user.first_name), reply_markup=start_inline_kb())
     remember_banner(photo, sent)
+    await message.answer("👇 Quyidagi tugma orqali do'konni oching yoki menyudan foydalaning:", reply_markup=menu)
 
 
 @router.message(StateFilter("*"), Command("cancel"))

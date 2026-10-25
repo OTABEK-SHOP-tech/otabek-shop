@@ -8,7 +8,10 @@ class Settings(BaseSettings):
     OWNER_SETUP_CODE: str = Field(default="bek_style_secret_setup_key_2026", description="Secret for the one-time /start claim_<code> link")
     DATA_DIR: str = Field(default="./data", description="Data directory for generated visuals")
     DATABASE_URL: str = Field(default="sqlite+aiosqlite:///./data/bek_style.db")
-    PORT: int = Field(default=8000, description="Port for healthcheck on Render")
+    PORT: int = Field(default=8000, description="Port for web server on Render")
+    WEBAPP_URL: str = Field(default="https://bek-style-shop.onrender.com", description="Public HTTPS URL for Mini App")
+    DEV_BROWSER_MODE: bool = Field(default=True, description="Enable browser dev mode for testing without Telegram")
+    DEV_ADMIN_ID: int | None = Field(default=None, description="Optional developer admin Telegram ID")
 
     @field_validator("DATABASE_URL", mode="after")
     @classmethod

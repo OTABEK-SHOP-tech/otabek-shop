@@ -8,7 +8,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY bekstyle ./bekstyle
 
-# SQLite database lives here: mount a volume so orders survive restarts.
+EXPOSE 10000
 VOLUME ["/app/data"]
 
 CMD ["python", "-m", "bekstyle"]
