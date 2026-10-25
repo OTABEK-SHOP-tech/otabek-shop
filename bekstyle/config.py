@@ -19,9 +19,18 @@ class Settings(BaseSettings):
             v = v.replace("postgres://", "postgresql+asyncpg://", 1)
         elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
             v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
-        # asyncpg doesn't accept channel_binding in connection URI
+
+        # asyncpg expects ssl=require, not sslmode=require
+        if "sslmode=" in v:
+            v = re.sub(r"sslmode=[^&]*", "ssl=require", v)
+        elif "ssl=" not in v and "neon.tech" in v:
+            sep = "&" if "?" in v else "?"
+            v = f"{v}{sep}ssl=require"
+
+        # remove channel_binding if present
         if "channel_binding=" in v:
             v = re.sub(r"[&?]channel_binding=[^&]*", "", v)
+
         return v
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
