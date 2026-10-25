@@ -56,7 +56,7 @@ def test_lists_settings_and_categories() -> None:
 
 
 def test_status_flow() -> None:
-    assert t.next_status("new") == "accepted"
+    assert t.next_status("pending_payment") == "payment_review"
     assert t.next_status("done") is None
     assert can_move("new", "accepted")
     assert not can_move("new", "shipping")  # no skipping steps

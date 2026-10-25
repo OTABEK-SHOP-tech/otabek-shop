@@ -21,7 +21,7 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    let errorMsg = `Server error (${response.status})`;
+    let errorMsg = `So‘rov bajarilmadi (${response.status}). Qayta urinib ko‘ring.`;
     try {
       const data = await response.json();
       if (data && data.detail) {
@@ -49,9 +49,10 @@ export const api = {
     }
     return apiFetch<T>(url, { method: 'GET' });
   },
-  post: <T>(endpoint: string, body?: any) => {
+  post: <T>(endpoint: string, body?: any, headers?: Record<string,string>) => {
     return apiFetch<T>(endpoint, {
       method: 'POST',
+      headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   },

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -10,15 +11,20 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     select,
     text,
+    inspect,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from bekstyle.config import settings
+
+logger = logging.getLogger("bekstyle")
 
 
 def utcnow() -> datetime:
@@ -116,6 +122,11 @@ class Order(Base):
     cargo_status: Mapped[str] = mapped_column(String(32), default="pending")
     cargo_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    receipt_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    receipt_content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key", name="uq_orders_user_idempotency"),)
 
 
 class Payment(Base):
@@ -276,6 +287,12 @@ DEFAULT_PRODUCTS = [
     },
 ]
 
+def is_demo_product(product: Product) -> bool:
+    """Identify only the seeded visual samples; never infer demo status from images alone."""
+    titles = {str(item.get("title", "")) for item in DEFAULT_PRODUCTS}
+    photos = product.photos or []
+    return bool(product.title in titles and photos and all("unsplash.com" in str(url).lower() for url in photos))
+
 connect_args: dict[str, Any] = {}
 if "postgresql" in settings.DATABASE_URL:
     connect_args = {
@@ -372,21 +389,26 @@ async def migrate_columns() -> None:
         ("orders", "cargo_price", "INTEGER"),
         ("orders", "cargo_status", "VARCHAR(32) DEFAULT 'pending'"),
         ("orders", "cargo_weight", "FLOAT"),
+        ("orders", "idempotency_key", "VARCHAR(128)"),
+        ("orders", "receipt_bytes", "BYTEA"),
+        ("orders", "receipt_content_type", "VARCHAR(100)"),
         ("products", "old_price", "INTEGER"),
         ("products", "is_new", "BOOLEAN DEFAULT TRUE"),
         ("products", "is_hit", "BOOLEAN DEFAULT FALSE"),
         ("products", "views", "INTEGER DEFAULT 0"),
     ]
-    for table, col, col_def in columns_to_add:
-        try:
-            async with engine.begin() as conn:
-                dialect = conn.dialect.name
-                if dialect == "postgresql":
-                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_def}"))
-                elif dialect == "sqlite":
-                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
-        except Exception as exc:
-            logger.debug("Migration column %s.%s notice: %s", table, col, exc)
+    # Inspect first so repeated SQLite startup never relies on swallowed DDL errors.
+    async with engine.begin() as conn:
+        for table, col, col_def in columns_to_add:
+            existing = await conn.run_sync(lambda sync_conn, name=table: {c["name"] for c in inspect(sync_conn).get_columns(name)})
+            if col in existing:
+                continue
+            definition = "BLOB" if conn.dialect.name == "sqlite" and col_def == "BYTEA" else col_def
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {definition}"))
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_user_idempotency "
+            "ON orders (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL"
+        ))
 
 
 async def init_db() -> None:

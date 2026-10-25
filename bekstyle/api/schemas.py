@@ -36,6 +36,7 @@ class ProductOut(BaseModel):
     is_new: bool
     is_hit: bool
     views: int = 0
+    is_demo: bool = False
 
 
 class CartItemAdd(BaseModel):

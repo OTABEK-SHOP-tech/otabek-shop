@@ -35,6 +35,14 @@ def main_menu(is_admin: bool) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, input_field_placeholder=f"{t.BRAND} — Streetwear & Casual")
 
 
+def admin_menu() -> InlineKeyboardMarkup:
+    """Admin inline menu used by the bot handlers."""
+    return inline(
+        [("➕ Mahsulot qo'shish", "ap:add"), ("📦 Mahsulotlar", "ap:list")],
+        [("🧾 Buyurtmalar", "ao:list"), ("⚙️ Sozlamalar", "a:settings")],
+    )
+
+
 def start_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -80,6 +88,36 @@ def grid(pairs: list[tuple[str, str]], width: int, *tail: list[tuple[str, str]])
     buttons = [Button(text=x, callback_data=cb) for x, cb in pairs]
     tail_rows = [[Button(text=x, callback_data=cb) for x, cb in row] for row in tail]
     return InlineKeyboardMarkup(inline_keyboard=[*_rows(buttons, width), *tail_rows])
+
+
+def picker_kb(options: list[str], callback_for: Callable[[int], str], back: str) -> InlineKeyboardMarkup:
+    rows = [[Button(text=value, callback_data=callback_for(i))] for i, value in enumerate(options)]
+    rows.append([Button(text="⬅️ Orqaga", callback_data=back)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def card_kb(product_id: int, category_id: int, position: int, total: int,
+            in_stock: bool, photo_count: int, cart_count: int) -> InlineKeyboardMarkup:
+    rows: list[list[Button]] = []
+    if total > 1:
+        rows.append([Button(text="◀️", callback_data=f"cat:{category_id}:{(position - 1) % total}"),
+                     Button(text=f"{position + 1}/{total}", callback_data="noop"),
+                     Button(text="▶️", callback_data=f"cat:{category_id}:{(position + 1) % total}")])
+    if photo_count > 1:
+        rows.append([Button(text="🖼 Barcha rasmlar", callback_data=f"ph:{product_id}")])
+    if in_stock:
+        rows.append([Button(text="🛒 Savatga qo'shish", callback_data=f"b:{product_id}:{category_id}:x:x")])
+    rows.append([Button(text="🛍 Katalog", callback_data="cats"), Button(text=f"🛒 Savat ({cart_count})", callback_data="cart")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def cart_kb(item_ids: list[int]) -> InlineKeyboardMarkup:
+    rows = [[Button(text="➖", callback_data=f"cq:{item_id}:-1"),
+             Button(text="➕", callback_data=f"cq:{item_id}:1")] for item_id in item_ids]
+    rows += [[Button(text="🗑 Savatni tozalash", callback_data="cclear")],
+             [Button(text="✅ Buyurtma berish", callback_data="checkout")],
+             [Button(text="🛍 Katalog", callback_data="cats")]]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def order_admin_kb(order_id: int, status: str, username: str | None = None) -> InlineKeyboardMarkup:

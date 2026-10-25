@@ -1,3 +1,4 @@
+import os
 import hashlib
 import hmac
 import json
@@ -33,7 +34,7 @@ def verify_telegram_init_data(init_data_raw: str, bot_token: str, max_age_second
         )
 
     # Local browser dev preview convenience
-    if settings.DEV_BROWSER_MODE and init_data_raw in ("dev_browser_mode", "browser_dev_mode"):
+    if settings.DEV_BROWSER_MODE and not os.getenv("RENDER") and init_data_raw in ("dev_browser_mode", "browser_dev_mode"):
         return {
             "user": json.dumps({
                 "id": 999888777,
@@ -71,7 +72,7 @@ def verify_telegram_init_data(init_data_raw: str, bot_token: str, max_age_second
         )
 
     current_time = int(time.time())
-    if current_time - auth_date > max_age_seconds:
+    if current_time - auth_date > max_age_seconds or auth_date > current_time + 300:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Telegram initData has expired (>24 hours)",
@@ -98,13 +99,15 @@ async def get_current_user_optional(
 ) -> Optional[TelegramUser]:
     """Extract user from Telegram initData if provided, or return mock in dev browser."""
     if not x_telegram_init_data:
-        if settings.DEV_BROWSER_MODE:
+        if settings.DEV_BROWSER_MODE and not os.getenv("RENDER"):
             return TelegramUser(
                 id=999888777,
                 first_name="Otabek",
                 username="bek_client",
-                is_admin=True,
-                is_owner=True,
+                # Browser previews are public customer sessions.  Never grant
+                # admin privileges without a verified Telegram identity.
+                is_admin=False,
+                is_owner=False,
             )
         return None
 
@@ -119,9 +122,9 @@ async def get_current_user_optional(
         res = await db.execute(select(Admin).where(Admin.telegram_id == tg_id))
         admin_rec = res.scalars().first()
 
-        is_dev = settings.DEV_BROWSER_MODE and x_telegram_init_data in ("dev_browser_mode", "browser_dev_mode")
-        is_admin = (admin_rec is not None) or is_dev
-        is_owner = (admin_rec is not None and admin_rec.role == "owner") or is_dev
+        is_dev = settings.DEV_BROWSER_MODE and not os.getenv("RENDER") and x_telegram_init_data in ("dev_browser_mode", "browser_dev_mode")
+        is_admin = admin_rec is not None
+        is_owner = admin_rec is not None and admin_rec.role == "owner"
 
         return TelegramUser(
             id=tg_id,
@@ -133,13 +136,13 @@ async def get_current_user_optional(
             is_owner=is_owner,
         )
     except Exception:
-        if settings.DEV_BROWSER_MODE:
+        if settings.DEV_BROWSER_MODE and not os.getenv("RENDER"):
             return TelegramUser(
                 id=999888777,
                 first_name="Otabek",
                 username="bek_client",
-                is_admin=True,
-                is_owner=True,
+                is_admin=False,
+                is_owner=False,
             )
         return None
 

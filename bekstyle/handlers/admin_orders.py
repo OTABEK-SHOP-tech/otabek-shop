@@ -109,11 +109,13 @@ async def on_pay_reject(callback: CallbackQuery, bot: Bot) -> None:
     reason = "To'lov hisobga kelib tushmadi yoki chek yaroqsiz"
     async with async_session() as session:
         order = await session.get(Order, order_id)
-        if order:
+        if order and order.status == "payment_review":
             order.status = "payment_rejected"
             order.reject_reason = reason
             await session.commit()
             await session.refresh(order)
+        else:
+            order = None
     if not order:
         await callback.answer("Buyurtma topilmadi.", show_alert=True)
         return

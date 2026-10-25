@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { CartSummary, Order, ShopSettings } from '../types';
 import { haptic } from '../utils/telegram';
+import { getMediaUrl } from '../utils/format';
+import './bek-style-pages.css';
 
 interface BagPageProps {
   cart: CartSummary;
@@ -54,6 +56,11 @@ const REGIONS = [
   'Sirdaryo',
   "Qoraqalpog'iston",
 ];
+
+const CheckoutProgress: React.FC<{ step: 'cart' | 'checkout_form' | 'payment_card' | 'receipt_submitted' }> = ({ step }) => {
+  const active = step === 'cart' ? 0 : step === 'checkout_form' ? 1 : 2;
+  return <div className="bs-checkout-progress" aria-label="Buyurtma bosqichlari">{['Savat', 'Manzil', 'To‘lov'].map((label, index) => <React.Fragment key={label}><div className={index <= active ? 'is-active' : ''}><span>{index + 1}</span><small>{label}</small></div>{index < 2 && <i className={index < active ? 'is-active' : ''}/>}</React.Fragment>)}</div>;
+};
 
 export const BagPage: React.FC<BagPageProps> = ({
   cart,
@@ -135,18 +142,19 @@ export const BagPage: React.FC<BagPageProps> = ({
     setPhone(val);
   };
 
-  const handleCopyCard = (cardNum: string) => {
-    navigator.clipboard.writeText(cardNum.replace(/\s+/g, ''));
-    setCopiedCard(cardNum);
-    haptic.notification('success');
-    setTimeout(() => setCopiedCard(null), 2000);
+  const handleCopyCard = async (cardNum: string) => {
+    try {
+      await navigator.clipboard.writeText(cardNum.replace(/\s+/g, ''));
+      setCopiedCard(cardNum); haptic.notification('success');
+      window.setTimeout(() => setCopiedCard(null), 2000);
+    } catch { setErrorMsg('Nusxalab bo‘lmadi. Karta raqamini belgilab nusxalang.'); }
   };
-
-  const handleCopySummary = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setSummaryCopied(true);
-    haptic.notification('success');
-    setTimeout(() => setSummaryCopied(false), 2000);
+  const handleCopySummary = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setSummaryCopied(true); haptic.notification('success');
+      window.setTimeout(() => setSummaryCopied(false), 2000);
+    } catch { setErrorMsg('Ma’lumotlarni nusxalab bo‘lmadi.'); }
   };
 
   // Step 1 -> Step 2: Checkout Form
@@ -165,7 +173,8 @@ export const BagPage: React.FC<BagPageProps> = ({
       return;
     }
 
-    if (phone.replace(/\D/g, '').length < 12) {
+    const normalizedPhone = phone.replace(/\D/g, '');
+    if (normalizedPhone.length !== 12 || !normalizedPhone.startsWith('998')) {
       setErrorMsg("Telefon raqamingizni to'liq kiriting (+998...)");
       return;
     }
@@ -179,6 +188,13 @@ export const BagPage: React.FC<BagPageProps> = ({
     haptic.impact('heavy');
 
     try {
+      const order = await onSubmitOrder({
+        customer_name: customerName,
+        phone,
+        city,
+        address,
+      });
+
       // Save customer info in localStorage for future
       try {
         localStorage.setItem(
@@ -186,13 +202,6 @@ export const BagPage: React.FC<BagPageProps> = ({
           JSON.stringify({ name: customerName, phone, city, address })
         );
       } catch {}
-
-      const order = await onSubmitOrder({
-        customer_name: customerName,
-        phone,
-        city,
-        address,
-      });
 
       setCurrentOrder(order);
       setStep('payment_card');
@@ -210,6 +219,12 @@ export const BagPage: React.FC<BagPageProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 10 * 1024 * 1024 || !/\.(png|jpe?g|webp|pdf)$/i.test(file.name)) {
+      setErrorMsg('Chek rasm yoki PDF bo‘lsin, hajmi 10 MB dan oshmasin.');
+      e.target.value = ''; return;
+    }
+    setErrorMsg('');
+    if (receiptPreview) URL.revokeObjectURL(receiptPreview);
     setReceiptFile(file);
     if (file.type.startsWith('image/')) {
       const url = URL.createObjectURL(file);
@@ -278,7 +293,7 @@ export const BagPage: React.FC<BagPageProps> = ({
       `Cargo: Tortilgandan keyin alohida hisoblanadi 📦`;
 
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center p-4 text-center max-w-md mx-auto space-y-4 animate-fadeIn pb-32">
+      <div className="bs-bag-page bs-bag-success min-h-[80vh] flex flex-col items-center justify-center p-4 text-center max-w-md mx-auto space-y-4 animate-fadeIn pb-32">
         <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl shadow-xs">
           <Clock size={32} />
         </div>
@@ -369,7 +384,7 @@ export const BagPage: React.FC<BagPageProps> = ({
   // STEP 3: PAYMENT SCREEN & RECEIPT UPLOAD
   if (step === 'payment_card' && currentOrder) {
     return (
-      <div className="pb-32 pt-3 px-4 max-w-lg mx-auto space-y-4 animate-fadeIn">
+      <div className="bs-bag-page bs-bag-payment pb-32 pt-3 px-4 max-w-lg mx-auto space-y-4 animate-fadeIn"><CheckoutProgress step={step} />
         {/* Header */}
         <div className="flex items-center gap-2">
           <button
@@ -400,7 +415,7 @@ export const BagPage: React.FC<BagPageProps> = ({
         <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start gap-2">
           <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed">
-            <strong>Muhim:</strong> Cargo haqi tortilgandan keyin alohida hisoblanadi. Hozir faqat kiyimlar summasini to'lang.
+            <strong>Muhim:</strong> Cargo haqi tortilgandan keyin alohida hisoblanadi. Hozir faqat mahsulotlar summasini to'lang.
           </p>
         </div>
 
@@ -412,6 +427,8 @@ export const BagPage: React.FC<BagPageProps> = ({
 
           {/* Card 1 */}
           <div
+            role="radio" aria-label="1-karta" aria-checked={selectedCard === card1} tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedCard(card1); } }}
             onClick={() => setSelectedCard(card1)}
             className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative ${
               selectedCard === card1
@@ -458,6 +475,8 @@ export const BagPage: React.FC<BagPageProps> = ({
 
           {/* Card 2 */}
           <div
+            role="radio" aria-label="2-karta" aria-checked={selectedCard === card2} tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedCard(card2); } }}
             onClick={() => setSelectedCard(card2)}
             className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative ${
               selectedCard === card2
@@ -573,7 +592,7 @@ export const BagPage: React.FC<BagPageProps> = ({
   // STEP 2: CHECKOUT FORM (DELIVERY DETAILS)
   if (step === 'checkout_form') {
     return (
-      <div className="pb-32 pt-3 px-4 max-w-lg mx-auto space-y-4 animate-fadeIn">
+      <div className="bs-bag-page bs-bag-checkout pb-32 pt-3 px-4 max-w-lg mx-auto space-y-4 animate-fadeIn"><CheckoutProgress step={step} />
         <div className="flex items-center gap-2">
           <button
             onClick={() => setStep('cart')}
@@ -590,10 +609,11 @@ export const BagPage: React.FC<BagPageProps> = ({
           <div className="bg-white rounded-2xl p-4 border border-gray-200/80 shadow-xs space-y-3.5">
             {/* Full Name */}
             <div>
-              <label className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
+              <label htmlFor="checkout-name" className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
                 Ism va familiya *
               </label>
               <input
+                id="checkout-name" autoComplete="name"
                 type="text"
                 required
                 value={customerName}
@@ -605,10 +625,11 @@ export const BagPage: React.FC<BagPageProps> = ({
 
             {/* Phone Number */}
             <div>
-              <label className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
+              <label htmlFor="checkout-phone" className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
                 Telefon raqam *
               </label>
               <input
+                id="checkout-phone" autoComplete="tel"
                 type="tel"
                 required
                 value={phone}
@@ -620,10 +641,11 @@ export const BagPage: React.FC<BagPageProps> = ({
 
             {/* Region / City */}
             <div>
-              <label className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
+              <label htmlFor="checkout-city" className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
                 Viloyat / Shahar *
               </label>
               <select
+                id="checkout-city" autoComplete="address-level1"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-900 focus:outline-none focus:border-emerald-500 focus:bg-white transition-all"
@@ -638,10 +660,11 @@ export const BagPage: React.FC<BagPageProps> = ({
 
             {/* Street / Address */}
             <div>
-              <label className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
+              <label htmlFor="checkout-address" className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
                 Aniq manzil (tuman, ko'cha, uy/kvartira) *
               </label>
               <textarea
+                id="checkout-address" autoComplete="street-address"
                 required
                 rows={2}
                 value={address}
@@ -697,7 +720,7 @@ export const BagPage: React.FC<BagPageProps> = ({
           Savatingiz hozircha bo'sh
         </h2>
         <p className="text-xs text-gray-500 leading-relaxed max-w-xs">
-          Katalogdan yigitlar uchun zamonaviy streetwear kiyimlarini tanlang va savatga qo'shing.
+          Katalogdan yoqtirgan kiyim va aksessuarlaringizni tanlang.
         </p>
         <button
           onClick={onGoToCatalog}
@@ -711,13 +734,13 @@ export const BagPage: React.FC<BagPageProps> = ({
 
   // STEP 1: CART REVIEW
   return (
-    <div className="pb-36 pt-3 px-4 max-w-lg mx-auto space-y-4 animate-fadeIn">
+    <div className="bs-bag-page bs-bag-cart pb-36 pt-3 px-4 max-w-lg mx-auto space-y-4 animate-fadeIn"><CheckoutProgress step={step} />
       {/* Title & Clear Cart */}
       <div className="flex items-center justify-between px-0.5">
         <h2 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
           <span>Savat</span>
           <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
-            {cart.total_items} ta kiyim
+            {cart.total_items} ta mahsulot
           </span>
         </h2>
         {onClearCart && (
@@ -745,7 +768,7 @@ export const BagPage: React.FC<BagPageProps> = ({
             <div className="w-16 h-20 rounded-xl bg-gray-100 overflow-hidden shrink-0 relative">
               {item.product_photo ? (
                 <img
-                  src={item.product_photo}
+                  src={getMediaUrl(item.product_photo)}
                   alt={item.product_title}
                   className="w-full h-full object-cover"
                 />
@@ -814,10 +837,9 @@ export const BagPage: React.FC<BagPageProps> = ({
       <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 flex items-start gap-2.5">
         <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
         <div className="text-xs text-amber-900 space-y-0.5">
-          <p className="font-bold">Yetkazish va Cargo haqida:</p>
+          <p className="font-bold">Yetkazish va kargo haqida:</p>
           <p className="text-amber-800/90 leading-relaxed text-[11px]">
-            Cargo haqi tortilgandan keyin alohida hisoblanadi. Tovarlar Toshkentga yetib kelgach,
-            aniq vazn bo'yicha to'lov qilinadi.
+            Kargo haqi tortilgandan keyin alohida hisoblanadi. Tasdiqlangan summa buyurtmangizga alohida qo‘shiladi.
           </p>
         </div>
       </div>

@@ -200,7 +200,7 @@ async def create_order_from_cart(
         address=address,
         items=snapshot,
         total=snapshot_total(snapshot),
-        status="new",
+        status="pending_payment",
     )
     session.add(order)
     user = await session.get(User, user_id)
@@ -214,6 +214,9 @@ async def create_order_from_cart(
 def can_move(current: str, target: str) -> bool:
     if target == "cancelled":
         return current not in FINAL_STATUSES
+    # Compatibility for legacy rows created before the payment-state flow.
+    if current == "new" and target == "accepted":
+        return True
     return next_status(current) == target
 
 

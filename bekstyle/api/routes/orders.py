@@ -1,16 +1,16 @@
 import os
-import shutil
 import uuid
 from pathlib import Path
 from typing import Any, List, Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, UploadFile, status
 from sqlalchemy import select, delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from bekstyle.api.auth import TelegramUser, get_current_user
 from bekstyle.api.schemas import OrderCreate, OrderOut, format_som
 from bekstyle.config import settings
-from bekstyle.db import CartItem, Order, Product, get_db, utcnow
+from bekstyle.db import CartItem, Order, Product, get_db, utcnow, is_demo_product
 from bekstyle.texts import ORDER_STATUSES
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -87,46 +87,47 @@ async def create_order(
     background_tasks: BackgroundTasks,
     user: TelegramUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
-    # Retrieve current cart items or payload items
-    stmt = select(CartItem).where(CartItem.user_id == user.id)
-    cart_items = (await db.execute(stmt)).scalars().all()
+    if idempotency_key is not None:
+        idempotency_key = idempotency_key.strip()
+        if not idempotency_key or len(idempotency_key) > 128:
+            raise HTTPException(status_code=400, detail="Idempotency-Key noto'g'ri")
+        existing = await db.scalar(select(Order).where(Order.user_id == user.id, Order.idempotency_key == idempotency_key))
+        if existing:
+            return to_order_out(existing)
+    name = payload.customer_name.strip()
+    digits = "".join(c for c in payload.phone if c.isdigit())
+    if not name or len(name) > 255 or len(payload.address.strip()) < 3 or len(payload.address) > 255:
+        raise HTTPException(status_code=400, detail="Ism va yetkazish manzilini to‘liq kiriting")
+    if len(digits) != 12 or not digits.startswith("998"):
+        raise HTTPException(status_code=400, detail="Telefon raqamini +998 bilan to‘liq kiriting")
 
+    def snapshot(prod: Product | None, color: str | None, size: str | None, qty: int) -> dict[str, Any]:
+        if not prod or not prod.in_stock or prod.price <= 0:
+            raise HTTPException(status_code=409, detail="Mahsulot hozir mavjud emas")
+        if is_demo_product(prod):
+            raise HTTPException(status_code=409, detail="Bu namuna mahsuloti. Haqiqiy mahsulotlar tez orada qo‘shiladi.")
+        if qty < 1 or qty > 99:
+            raise HTTPException(status_code=400, detail="Mahsulot soni 1 dan 99 gacha bo‘lsin")
+        if (prod.colors and color not in prod.colors) or (not prod.colors and color):
+            raise HTTPException(status_code=409, detail="Mahsulot rangini qayta tanlang")
+        if (prod.sizes and size not in prod.sizes) or (not prod.sizes and size):
+            raise HTTPException(status_code=409, detail="Mahsulot o‘lchamini qayta tanlang")
+        return {"product_id": prod.id, "title": prod.title, "price": prod.price,
+                "color": color or "", "size": size or "", "qty": qty,
+                "photo": prod.photos[0] if prod.photos else ""}
+
+    cart_items = (await db.execute(select(CartItem).where(CartItem.user_id == user.id))).scalars().all()
     items_snapshot: List[dict[str, Any]] = []
-    total = 0
-
     if cart_items:
-        for it in cart_items:
-            prod = it.product
-            if not prod:
-                continue
-            item_subtotal = prod.price * it.qty
-            total += item_subtotal
-            photo = prod.photos[0] if prod.photos else ""
-            items_snapshot.append({
-                "product_id": prod.id,
-                "title": prod.title,
-                "price": prod.price,
-                "color": it.color or "",
-                "size": it.size or "",
-                "qty": it.qty,
-                "photo": photo,
-            })
+        for item in cart_items:
+            items_snapshot.append(snapshot(item.product, item.color, item.size, item.qty))
     elif payload.items:
-        for it in payload.items:
-            prod = await db.get(Product, it.product_id)
-            price = prod.price if prod else it.price
-            total += price * it.qty
-            photo = (prod.photos[0] if prod and prod.photos else it.photo) or ""
-            items_snapshot.append({
-                "product_id": it.product_id,
-                "title": it.title,
-                "price": price,
-                "color": it.color or "",
-                "size": it.size or "",
-                "qty": it.qty,
-                "photo": photo,
-            })
+        for item in payload.items:
+            prod = await db.get(Product, item.product_id)
+            items_snapshot.append(snapshot(prod, item.color, item.size, item.qty))
+    total = sum(item["price"] * item["qty"] for item in items_snapshot)
 
     if not items_snapshot:
         raise HTTPException(
@@ -137,22 +138,29 @@ async def create_order(
     full_address = f"{payload.city}, {payload.address}".strip(" ,")
     new_order = Order(
         user_id=user.id,
-        customer_name=payload.customer_name.strip(),
-        customer_username=payload.customer_username or user.username,
-        phone=payload.phone.strip(),
+        customer_name=name,
+        customer_username=user.username,
+        phone="+" + digits,
         city=payload.city.strip(),
         address=full_address,
         items=items_snapshot,
         total=total,
         status="pending_payment",  # Initial state: awaiting payment
         cargo_status="pending",
+        idempotency_key=idempotency_key,
     )
     db.add(new_order)
-    await db.flush()
-
-    # Clear user's cart
-    await db.execute(delete(CartItem).where(CartItem.user_id == user.id))
-    await db.commit()
+    try:
+        await db.flush()
+        await db.execute(delete(CartItem).where(CartItem.user_id == user.id))
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        if idempotency_key:
+            existing = await db.scalar(select(Order).where(Order.user_id == user.id, Order.idempotency_key == idempotency_key))
+            if existing:
+                return to_order_out(existing)
+        raise HTTPException(status_code=409, detail="Buyurtma yangilanmoqda. Qayta urinib ko‘ring")
     await db.refresh(new_order)
 
     # Notify admin via Telegram in background about new order intent
@@ -170,11 +178,24 @@ async def upload_order_receipt(
     user: TelegramUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    order = await db.get(Order, order_id)
+    order = await db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if not order:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
     if order.user_id != user.id and not user.is_admin:
         raise HTTPException(status_code=403, detail="Ruxsat berilmagan")
+    if order.status not in {"pending_payment", "payment_rejected"}:
+        raise HTTPException(status_code=409, detail="Bu buyurtma uchun yangi chek qabul qilinmaydi")
+
+    # Only expose/use the two configured recipient cards.  A client cannot
+    # inject an arbitrary card label into the order record.
+    from bekstyle.db import get_setting
+    configured_cards = {
+        (await get_setting(db, "payment_card_1") or "").strip(),
+        (await get_setting(db, "payment_card_2") or "").strip(),
+    }
+    selected = selected_card.strip()
+    if selected not in configured_cards or not selected:
+        raise HTTPException(status_code=400, detail="To'lov kartasi noto'g'ri")
 
     # Validate extension
     filename = file.filename or "receipt.jpg"
@@ -190,11 +211,34 @@ async def upload_order_receipt(
     clean_filename = f"receipt_{order.id}_{uuid.uuid4().hex[:8]}{ext}"
     dest_path = receipts_dir / clean_filename
 
+    # Keep uploads bounded so a client cannot exhaust the receipt volume.
+    max_bytes = 10 * 1024 * 1024
+    size = 0
     with open(dest_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                dest_path.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail="Chek hajmi 10 MB dan oshmasin")
+            buffer.write(chunk)
 
-    order.selected_card = selected_card.strip()
+    receipt_data = dest_path.read_bytes()
+    mime = None
+    if receipt_data.startswith(b"\x89PNG\r\n\x1a\n") and ext == ".png":
+        mime = "image/png"
+    elif receipt_data.startswith(b"\xff\xd8\xff") and ext in {".jpg", ".jpeg"}:
+        mime = "image/jpeg"
+    elif receipt_data[:4] == b"RIFF" and receipt_data[8:12] == b"WEBP" and ext == ".webp":
+        mime = "image/webp"
+    elif receipt_data.startswith(b"%PDF-") and ext == ".pdf":
+        mime = "application/pdf"
+    if not mime:
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Yaroqli rasm yoki PDF chek faylini tanlang")
+    order.selected_card = selected
     order.receipt_url = f"/api/media/receipts/{clean_filename}"
+    order.receipt_bytes = receipt_data
+    order.receipt_content_type = mime
     order.receipt_uploaded_at = utcnow()
     order.status = "payment_review"
     order.reject_reason = None
@@ -223,7 +267,7 @@ async def get_order_by_id(
     user: TelegramUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    order = await db.get(Order, order_id)
+    order = await db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if not order:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
     if order.user_id != user.id and not user.is_admin:
@@ -240,9 +284,11 @@ async def confirm_order_payment(
 ):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
-    order = await db.get(Order, order_id)
+    order = await db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if not order:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if order.status != "payment_review":
+        raise HTTPException(status_code=409, detail="Buyurtma to‘lov tekshiruvida emas")
     order.status = "paid"
     order.reject_reason = None
     await db.commit()
@@ -267,9 +313,11 @@ async def reject_order_payment(
 ):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
-    order = await db.get(Order, order_id)
+    order = await db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if not order:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if order.status != "payment_review":
+        raise HTTPException(status_code=409, detail="Buyurtma to'lov tekshiruvida emas")
     order.status = "payment_rejected"
     order.reject_reason = reason
     await db.commit()

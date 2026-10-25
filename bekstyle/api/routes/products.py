@@ -4,26 +4,30 @@ from sqlalchemy import select, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bekstyle.api.schemas import ProductOut, format_som
-from bekstyle.db import Category, Product, get_db
+from bekstyle.db import Category, Product, get_db, is_demo_product, DEFAULT_PRODUCTS
 
 router = APIRouter(prefix="/products", tags=["products"])
 
 
 def to_product_out(p: Product) -> ProductOut:
+    demo = is_demo_product(p)
+    demo_names = ["Keng bichimli hudi", "Ko‘p cho‘ntakli shim", "Keng bichimli futbolka", "Keng jinsi shim", "Bomber kurtka", "Qalin taglikli krossovka", "Kundalik yelka sumkasi", "Keng bichimli svitshot"]
+    titles = {item["title"]: demo_names[i] for i, item in enumerate(DEFAULT_PRODUCTS)}
+    title = titles.get(p.title, p.title) if demo else p.title
     disc = None
-    if p.old_price and p.old_price > p.price:
+    if not demo and p.old_price and p.old_price > p.price:
         disc = int(round((p.old_price - p.price) / p.old_price * 100))
 
     cat_name = p.category.name if p.category else ""
     return ProductOut(
         id=p.id,
-        title=p.title,
-        name=p.title,
-        description=p.description or "",
+        title=title,
+        name=title,
+        description=("Ko‘rinishni sinab ko‘rish uchun namuna. Haqiqiy mahsulotlar alohida qo‘shiladi." if demo else (p.description or "")),
         price=p.price,
         formatted_price=format_som(p.price),
-        old_price=p.old_price,
-        formatted_old_price=format_som(p.old_price) if p.old_price else None,
+        old_price=None if demo else p.old_price,
+        formatted_old_price=format_som(p.old_price) if p.old_price and not demo else None,
         discount_percent=disc,
         category_id=p.category_id,
         category_name=cat_name,
@@ -34,6 +38,7 @@ def to_product_out(p: Product) -> ProductOut:
         is_new=p.is_new,
         is_hit=p.is_hit,
         views=p.views or 0,
+        is_demo=demo,
     )
 
 

@@ -48,10 +48,10 @@ async def setup_bot_profile(bot: Bot) -> None:
                 BotCommand(command="cancel", description="❌ Bekor qilish"),
             ]
         )
-        await bot.set_my_short_description(f"{t.BRAND} — yigitlar uchun streetwear & casual 🔥")
+        await bot.set_my_short_description(f"{t.BRAND} — yigitlar kiyimi va aksessuarlari")
         await bot.set_my_description(
-            f"⚡ {t.BRAND}\nYigitlar uchun zamonaviy streetwear & casual kiyimlar do'koni.\n"
-            f"Pinduoduodan sifatli buyurtma — o'lcham, rang va hamyonbop narxlar bilan."
+            f"⚡ {t.BRAND}\nYigitlar uchun kiyim va aksessuarlar do‘koni.\n"
+            f"Mahsulotni tanlang, buyurtma bering va to‘lov chekini yuboring."
         )
     except Exception as exc:
         logger.warning("Bot profile/menu button setup failed: %s", exc)
@@ -157,13 +157,15 @@ def create_app() -> FastAPI:
             if full_path.startswith("api/"):
                 return JSONResponse({"detail": "Not Found"}, status_code=404)
 
-            file_path = webapp_dist / full_path
+            file_path = (webapp_dist / full_path).resolve()
+            if not file_path.is_relative_to(webapp_dist.resolve()):
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
             if file_path.is_file():
                 return FileResponse(str(file_path))
 
             index_file = webapp_dist / "index.html"
             if index_file.is_file():
-                return FileResponse(str(index_file))
+                return FileResponse(str(index_file), headers={"Cache-Control": "no-cache"})
 
             return JSONResponse({"status": "ok", "app": "BEK STYLE", "detail": "Webapp building..."}, status_code=200)
 

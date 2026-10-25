@@ -88,8 +88,8 @@ async def test_status_changes_follow_flow_and_apply_once() -> None:
         order, _ = await create_order_from_cart(session, CUSTOMER, "Aziz", None, "+998", "Toshkent")
         assert order is not None
         assert await change_order_status(session, order.id, "shipping") is None  # skipping is refused
-        accepted = await change_order_status(session, order.id, "accepted")
-        assert accepted is not None and accepted.status == "accepted"
+        reviewed = await change_order_status(session, order.id, "payment_review")
+        assert reviewed is not None and reviewed.status == "payment_review"
         assert await change_order_status(session, order.id, "accepted") is None  # second click is a no-op
         assert await change_order_status(session, order.id, "cancelled") is not None
         assert await change_order_status(session, order.id, "ordered") is None

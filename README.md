@@ -1,48 +1,72 @@
-# BEK STYLE — Telegram Do'kon Boti
+# BEK STYLE
 
-Yigitlar va o'g'il bolalar uchun streetwear & casual kiyim do'koni boti. Pinduoduodan kiyimlarni buyurtma asosida olib, ustama bilan sotish uchun mo'ljallangan.
+Telegram Mini App for a made-to-order men's clothing and accessories shop.
+React + Vite frontend, FastAPI + aiogram backend, and PostgreSQL/SQLite storage.
 
----
+## Customer flow
 
-## ⚡ Asosiy Imkoniyatlar
-- **Streetwear & Casual Brand Voice**: Qisqa, zamonaviy o'zbek tilidagi matnlar va menyular.
-- **Rasmlarni ketma-ket albom qilib yuborish**: Har bir mahsulot rasmlari, narxi, o'lchamlari va ranglari bilan.
-- **Pinduoduo Yuan (¥) kalkulyatori**: Yuan narxidan avtomatik so'mga o'tkazish va ustama marjasini hisoblash.
-- **Savatcha va Buyurtmalar**: Mijoz uchun oson buyurtma berish, admin uchun buyurtma holatini boshqarish (`new` -> `paid` -> `ordered_pinduoduo` -> `in_transit` -> `arrived` -> `delivered`).
-- **PostgreSQL (Neon.tech) & SQLite mosligi**: `asyncpg` va `aiosqlite` drayverlari orqali bulutli yoki mahalliy bazada ishlash.
-- **Render 24/7 Web Service**: Ichki HTTP healthcheck serveri Render Web Service va `cron-job.org` bilan to'xtovsiz ishlaydi.
+Catalog → choose size/color → cart → delivery details → order total → recipient card → upload receipt.
+There is no wallet or balance top-up. A receipt enters payment review; only an admin can confirm the actual bank transfer.
+Cargo is billed separately after weighing and is never represented as a zero delivery charge.
 
----
+The inherited eight AI sample products are explicitly identified as demo items. They remain visible for design preview, but checkout rejects them. Add actual sourced products through the existing admin tools before accepting customer orders.
 
-## 🚀 Ishga Tushirish (Mahalliy)
+## Environment
 
-1. Python 3.12+ o'rnating.
-2. Kutubxonalarni o'rnating:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. `.env` faylini yarating (`.env.example` dan nusxa oling):
-   ```env
-   BOT_TOKEN=8708883866:AAGBb7G0P34kvXmx-HZnQLZUB00hWBSTJiU
-   DATABASE_URL=postgresql+asyncpg://neondb_owner:npg_0RQUbe9NFiks@ep-gentle-smoke-b5s3n2fa-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require
-   OWNER_SETUP_CODE=bek_style_secret_setup_key_2026
-   PORT=8000
-   ```
-4. Botni ishga tushiring:
-   ```bash
-   python -m bekstyle
-   ```
+Create a local `.env` from `.env.example`. Never commit actual credentials.
 
----
-
-## 👑 Admin Bo'lish (Bir martalik havola)
-Botga kirib quyidagi havolani bosing:
-`https://t.me/bek_styleee_bot?start=claim_bek_style_secret_setup_key_2026`
-Shunda siz avtomatik ravishda bosh admin (Owner) qilib belgilanishingiz mumkin.
-
----
-
-## 🧪 Testlarni Ishga Tushirish
-```bash
-python -m pytest -v
+```env
+BOT_TOKEN=YOUR_BOTFATHER_TOKEN
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST/DATABASE?ssl=require
+OWNER_SETUP_CODE=YOUR_LONG_RANDOM_SETUP_CODE
+PORT=8000
+DEV_BROWSER_MODE=false
 ```
+
+Public browser visits are read-only. Private actions require verified Telegram Mini App initData. Local dev bypass is disabled by default and is not accepted on Render.
+
+## Local development
+
+```powershell
+python -m pip install -r requirements-dev.txt
+cd webapp
+npm ci
+npm run build
+cd ..
+python -m bekstyle
+```
+
+The API serves `webapp/dist` locally and `bekstyle/static` in the Docker image. Use a separate local SQLite database and an empty BOT_TOKEN for offline preview so tests never poll the live bot or notify real admins.
+
+## Render deployment
+
+The Dockerfile builds the React frontend in a Node stage and copies the result into the Python runtime. GitHub auto-deploy can deploy commits on the configured branch; build and deployment status must be verified on Render.
+
+Keep BOT_TOKEN, DATABASE_URL and OWNER_SETUP_CODE in Render environment variables. Use persistent PostgreSQL storage for live records. Database changes are additive. Uploaded receipt bytes are stored in the database so they survive an ephemeral container replacement. Receipt download requires the order owner's or admin's verified Telegram identity.
+
+Health endpoint: `/health`.
+Live shop: https://bek-style-shop.onrender.com
+Telegram bot: https://t.me/bek_styleee_bot
+
+## Payment behavior
+
+- Prices, product availability and selected variants are validated on the server.
+- Checkout uses an Idempotency-Key to prevent duplicate orders on retries.
+- A receipt is accepted only for a pending or rejected payment, and must be a valid image/PDF of at most 10 MB.
+- Admin confirmation/rejection requires the payment_review state.
+- Public API responses contain sale prices, never internal cost or markup fields.
+- Recipient cards are editable admin settings; they are not payer card credentials.
+
+## Validation
+
+```powershell
+pytest -q
+cd webapp
+npm run build
+```
+
+Tests use temporary SQLite databases and do not contact Telegram. Live bank transfers and real customer purchases are not part of automated tests.
+
+## Credential hygiene
+
+If a real token/password has ever appeared in a public commit, removing its current text is insufficient: revoke/rotate it at its provider and update the deployment environment. Do not rewrite shared Git history or destroy existing data as part of routine deployment.

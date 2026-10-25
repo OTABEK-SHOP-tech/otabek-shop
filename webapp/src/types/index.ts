@@ -1,4 +1,5 @@
 export interface Product {
+  is_demo?: boolean;
   id: number;
   title: string;
   name?: string;

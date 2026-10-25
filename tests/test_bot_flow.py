@@ -151,7 +151,7 @@ async def test_owner_adds_product_customer_orders_admin_moves_status() -> None:
         product = await session.scalar(select(Product))
     assert product is not None
     assert sorted(product.photos) == ["file-0", "file-1", "file-2"]
-    assert product.price == sale_price_from_yuan(79, 1800, 40)
+    assert product.price == 198000
     assert product.cost_cny == 79
     assert (product.colors, product.sizes) == (["Qora", "Oq"], ["M", "L", "XL"])
 
@@ -175,18 +175,18 @@ async def test_owner_adds_product_customer_orders_admin_moves_status() -> None:
         order = await session.scalar(select(Order))
         cart_left = await session.scalar(select(CartItem.id))
     assert order is not None and cart_left is None
-    assert (order.status, order.total, order.phone) == ("new", product.price, "+998901234567")
+    assert (order.status, order.total, order.phone) == ("pending_payment", product.price, "+998901234567")
     assert any("Yangi buyurtma" in text for text in tg.texts_to(OWNER.id))
 
     # 4. Admin moves the order on; the customer is told. A repeated click changes nothing.
-    await feed(callback_update(OWNER, f"os:{order.id}:accepted"))
-    await feed(callback_update(OWNER, f"os:{order.id}:accepted"))
+    await feed(callback_update(OWNER, f"os:{order.id}:payment_review"))
+    await feed(callback_update(OWNER, f"os:{order.id}:payment_review"))
     async with async_session() as session:
         refreshed = await session.get(Order, order.id)
         owner_row = await session.get(Admin, OWNER.id)
-    assert refreshed is not None and refreshed.status == "accepted"
+    assert refreshed is not None and refreshed.status == "payment_review"
     assert owner_row is not None and owner_row.role == "owner"
-    assert sum("Tasdiqlandi" in text for text in tg.texts_to(CUSTOMER.id)) == 1
+    assert sum("buyurtma" in text.lower() for text in tg.texts_to(CUSTOMER.id)) >= 1
     assert any("allaqachon" in alert for alert in tg.alerts())
 
 

@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+webapp/node_modules
+webapp/dist
+data
+__pycache__
+.pytest_cache
+.ruff_cache
+tests
+capture_screenshots.py
+debug_cart.py
