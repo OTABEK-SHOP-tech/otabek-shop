@@ -1,0 +1,30 @@
+import re
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    BOT_TOKEN: str = Field(default="", description="BEK STYLE bot token from @BotFather")
+    OWNER_SETUP_CODE: str = Field(default="bek_style_secret_setup_key_2026", description="Secret for the one-time /start claim_<code> link")
+    DATA_DIR: str = Field(default="./data", description="Data directory for generated visuals")
+    DATABASE_URL: str = Field(default="sqlite+aiosqlite:///./data/bek_style.db")
+    PORT: int = Field(default=8000, description="Port for healthcheck on Render")
+
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if not v:
+            return v
+        if v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        # asyncpg doesn't accept channel_binding in connection URI
+        if "channel_binding=" in v:
+            v = re.sub(r"[&?]channel_binding=[^&]*", "", v)
+        return v
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+
+settings = Settings()

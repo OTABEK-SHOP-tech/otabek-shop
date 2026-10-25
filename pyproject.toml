@@ -1,0 +1,13 @@
+[project]
+name = "bek-style-bot"
+version = "1.0.0"
+description = "BEK STYLE — Telegram shop bot for men's streetwear (Pinduoduo, made to order)"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
