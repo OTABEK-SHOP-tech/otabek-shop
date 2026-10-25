@@ -10,15 +10,17 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 @router.get("", response_model=SettingsOut)
 async def get_public_settings(db: AsyncSession = Depends(get_db)):
     contact = await get_setting(db, "contact_username") or "bekstyle_admin"
-    yuan = await get_setting(db, "yuan_rate") or "1850"
-    markup = await get_setting(db, "markup_percent") or "35"
-    delivery = await get_setting(db, "delivery_text") or "10-18 kun ichida O'zbekiston bo'ylab yetkaziladi"
-    channel = await get_setting(db, "channel_username") or "bekstyle_uz"
+    delivery = await get_setting(db, "delivery_text") or "O'zbekiston bo'ylab tezkor yetkazib beriladi"
+    channel = await get_setting(db, "channel_username") or "bek_style_shop"
+    card1 = await get_setting(db, "payment_card_1") or "4916 9903 4816 9779"
+    card2 = await get_setting(db, "payment_card_2") or "9860 2301 0748 6030"
+    cargo = await get_setting(db, "cargo_info") or "Cargo haqi tortilgandan keyin alohida hisoblanadi"
 
     return SettingsOut(
         contact_username=contact,
-        yuan_rate=int(yuan) if yuan.isdigit() else 1850,
-        markup_percent=int(markup) if markup.isdigit() else 35,
         delivery_text=delivery,
         channel_username=channel,
+        payment_card_1=card1,
+        payment_card_2=card2,
+        cargo_info=cargo,
     )

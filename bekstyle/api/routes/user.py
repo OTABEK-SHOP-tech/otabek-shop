@@ -32,13 +32,19 @@ async def get_user_profile(
         await db.execute(select(func.count(Order.id)).where(Order.user_id == user.id))
     ).scalar() or 0
 
+    last_order = (
+        await db.execute(
+            select(Order).where(Order.user_id == user.id).order_by(Order.id.desc()).limit(1)
+        )
+    ).scalar_one_or_none()
+
     return UserProfileOut(
         telegram_id=u.telegram_id,
         name=u.name or user.first_name,
         username=u.username,
-        phone=u.phone,
-        balance=u.balance or 0,
-        formatted_balance=format_som(u.balance or 0),
+        phone=u.phone or (last_order.phone if last_order else None),
+        saved_city=last_order.city if last_order else "",
+        saved_address=last_order.address if last_order else "",
         orders_count=orders_count,
         is_admin=user.is_admin,
     )
@@ -49,4 +55,5 @@ async def sync_user(
     user: TelegramUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    return await get_user_profile(user=user, db=db)
     return await get_user_profile(user, db)

@@ -95,3 +95,15 @@ def order_admin_kb(order_id: int, status: str, username: str | None = None) -> I
     if username:
         rows.append([Button(text="💬 Mijoz bilan yozishish", url=f"https://t.me/{username.lstrip('@')}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def order_receipt_admin_kb(order_id: int, username: str | None = None) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            Button(text="✅ To'lovni tasdiqlash", callback_data=f"pay:confirm:{order_id}"),
+            Button(text="❌ Rad etish", callback_data=f"pay:reject:{order_id}"),
+        ]
+    ]
+    if username:
+        rows.append([Button(text="💬 Mijoz bilan yozishish", url=f"https://t.me/{username.lstrip('@')}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

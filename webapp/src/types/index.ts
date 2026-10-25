@@ -1,6 +1,7 @@
 export interface Product {
   id: number;
   title: string;
+  name?: string;
   description: string;
   price: number;
   formatted_price: string;
@@ -72,6 +73,14 @@ export interface Order {
   formatted_total: string;
   status: string;
   status_label: string;
+  selected_card?: string | null;
+  receipt_url?: string | null;
+  receipt_uploaded_at?: string | null;
+  reject_reason?: string | null;
+  cargo_price?: number | null;
+  formatted_cargo_price?: string | null;
+  cargo_status?: string | null;
+  cargo_weight?: number | null;
   created_at: string;
 }
 
@@ -80,18 +89,19 @@ export interface UserProfile {
   name: string;
   username?: string | null;
   phone?: string | null;
-  balance: number;
-  formatted_balance: string;
+  saved_city?: string | null;
+  saved_address?: string | null;
   orders_count: number;
   is_admin: boolean;
 }
 
 export interface ShopSettings {
   contact_username: string;
-  yuan_rate: number;
-  markup_percent: number;
   delivery_text: string;
   channel_username: string;
+  payment_card_1: string;
+  payment_card_2: string;
+  cargo_info: string;
 }
 
 export type TabType = 'home' | 'catalog' | 'cart' | 'profile';

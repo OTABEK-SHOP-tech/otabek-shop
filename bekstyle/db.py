@@ -107,7 +107,14 @@ class Order(Base):
     address: Mapped[str] = mapped_column(String(255))
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSON)  # snapshot: title, price, color, size, qty, photo
     total: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(16), default="new", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending_payment", index=True)
+    selected_card: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    receipt_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    receipt_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cargo_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cargo_status: Mapped[str] = mapped_column(String(32), default="pending")
+    cargo_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -131,11 +138,14 @@ class Setting(Base):
 
 DEFAULT_SETTINGS: dict[str, str] = {
     "contact_username": "bekstyle_admin",
+    "payment_card_1": "4916 9903 4816 9779",
+    "payment_card_2": "9860 2301 0748 6030",
+    "delivery_text": "O'zbekiston bo'ylab tezkor yetkazib beriladi",
+    "cargo_info": "Cargo haqi tortilgandan keyin alohida hisoblanadi",
+    "channel_id": "",
+    "channel_username": "bek_style_shop",
     "yuan_rate": "1850",
     "markup_percent": "35",
-    "delivery_text": "10-18 kun ichida O'zbekiston bo'ylab yetkaziladi",
-    "channel_id": "",
-    "channel_username": "bekstyle_uz",
 }
 
 DEFAULT_CATEGORIES: list[tuple[str, str]] = [
@@ -342,11 +352,26 @@ async def seed_default_products(session: AsyncSession, cat_map: dict[str, int]) 
     await session.commit()
 
 
+async def seed_settings(session: AsyncSession) -> None:
+    for k, v in DEFAULT_SETTINGS.items():
+        row = await session.get(Setting, k)
+        if not row:
+            session.add(Setting(key=k, value=v))
+    await session.commit()
+
+
 async def migrate_columns() -> None:
     """Safe schema column updates for existing PostgreSQL or SQLite databases."""
     columns_to_add = [
         ("users", "balance", "INTEGER DEFAULT 0"),
         ("orders", "city", "VARCHAR(64) DEFAULT ''"),
+        ("orders", "selected_card", "VARCHAR(64)"),
+        ("orders", "receipt_url", "VARCHAR(512)"),
+        ("orders", "receipt_uploaded_at", "TIMESTAMP WITH TIME ZONE"),
+        ("orders", "reject_reason", "TEXT"),
+        ("orders", "cargo_price", "INTEGER"),
+        ("orders", "cargo_status", "VARCHAR(32) DEFAULT 'pending'"),
+        ("orders", "cargo_weight", "FLOAT"),
         ("products", "old_price", "INTEGER"),
         ("products", "is_new", "BOOLEAN DEFAULT TRUE"),
         ("products", "is_hit", "BOOLEAN DEFAULT FALSE"),
@@ -370,5 +395,6 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
     await migrate_columns()
     async with async_session() as session:
+        await seed_settings(session)
         cat_map = await seed_categories(session)
         await seed_default_products(session, cat_map)

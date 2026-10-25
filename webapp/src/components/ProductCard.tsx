@@ -1,20 +1,32 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Heart, Plus } from 'lucide-react';
 import { Product } from '../types';
 import { haptic } from '../utils/telegram';
 
 interface ProductCardProps {
   product: Product;
+  isWishlisted?: boolean;
+  onToggleWishlist?: (productId: number) => void;
   onSelect: (product: Product) => void;
   onQuickAdd?: (product: Product, e: React.MouseEvent) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
   product,
+  isWishlisted = false,
+  onToggleWishlist,
   onSelect,
   onQuickAdd,
 }) => {
   const photo = product.photos && product.photos.length > 0 ? product.photos[0] : '';
+
+  const handleHeartClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    haptic.impact('light');
+    if (onToggleWishlist) {
+      onToggleWishlist(product.id);
+    }
+  };
 
   return (
     <div
@@ -22,37 +34,54 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         haptic.selection();
         onSelect(product);
       }}
-      className="group bg-[#1A1D20] border border-[#26292E] rounded-2xl overflow-hidden flex flex-col cursor-pointer active:scale-[0.98] transition-all hover:border-[#C7F464]/40"
+      className="group bg-white rounded-2xl border border-gray-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-md transition-all duration-200 flex flex-col cursor-pointer active:scale-[0.98] overflow-hidden"
     >
       {/* Photo Container */}
-      <div className="relative aspect-[4/5] bg-[#111315] overflow-hidden">
+      <div className="relative aspect-[4/5] bg-gray-100 overflow-hidden">
         {photo ? (
           <img
             src={photo}
             alt={product.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center">
             <span className="text-2xl mb-1">⚡</span>
-            <span className="text-[11px] font-bold text-[#8E95A0] uppercase">BEK STYLE</span>
+            <span className="text-[11px] font-bold text-gray-400 uppercase">BEK STYLE</span>
           </div>
         )}
 
         {/* Badges */}
-        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start z-10">
           {product.discount_percent && product.discount_percent > 0 ? (
-            <span className="bg-[#C7F464] text-[#111315] text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider shadow">
+            <span className="bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shadow-xs">
               -{product.discount_percent}%
             </span>
           ) : null}
           {product.is_new ? (
-            <span className="bg-[#111315]/80 backdrop-blur-sm border border-[#26292E] text-[#F5F2E9] text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">
+            <span className="bg-gray-900/85 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm shadow-xs">
               Yangi
             </span>
           ) : null}
+          {product.is_hit ? (
+            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-xs">
+              XIT
+            </span>
+          ) : null}
         </div>
+
+        {/* Wishlist Heart Button */}
+        <button
+          onClick={handleHeartClick}
+          aria-label="Sevimlilarga qo'shish"
+          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200/80 flex items-center justify-center text-gray-400 hover:text-rose-500 active:scale-90 transition-all shadow-xs z-10"
+        >
+          <Heart
+            size={14}
+            className={isWishlisted ? 'fill-rose-500 text-rose-500' : 'text-gray-500'}
+          />
+        </button>
 
         {/* Quick Add Button */}
         {onQuickAdd && (
@@ -62,39 +91,47 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               haptic.impact('medium');
               onQuickAdd(product, e);
             }}
-            aria-label="Savatga qo'shish"
-            className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-[#111315]/90 border border-[#26292E] flex items-center justify-center text-[#C7F464] active:scale-90 hover:bg-[#C7F464] hover:text-[#111315] transition-all shadow"
+            aria-label="Savatga tezkor qo'shish"
+            className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md active:scale-90 transition-all z-10"
           >
             <Plus size={16} strokeWidth={2.5} />
           </button>
         )}
       </div>
 
-      {/* Info */}
-      <div className="p-3 flex-1 flex flex-col justify-between">
+      {/* Info Container */}
+      <div className="p-3 flex flex-col flex-1 justify-between gap-1.5">
         <div>
-          <h3 className="text-xs font-bold text-[#F5F2E9] line-clamp-2 leading-snug">
+          {product.category_name && (
+            <span className="text-[10px] font-semibold text-emerald-700 tracking-wider uppercase block">
+              {product.category_name}
+            </span>
+          )}
+          <h3 className="text-xs sm:text-sm font-bold text-gray-900 line-clamp-2 leading-snug">
             {product.title}
           </h3>
         </div>
 
-        <div className="mt-2.5 pt-1.5 border-t border-[#26292E]/60 flex items-baseline justify-between gap-1 flex-wrap">
-          <div>
-            <div className="text-[13px] font-black text-[#C7F464]">
+        <div>
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-sm font-extrabold text-gray-900">
               {product.formatted_price}
-            </div>
-            {product.formatted_old_price ? (
-              <div className="text-[10px] text-[#8E95A0] line-through">
+            </span>
+            {product.formatted_old_price && (
+              <span className="text-[11px] text-gray-400 line-through">
                 {product.formatted_old_price}
-              </div>
-            ) : null}
+              </span>
+            )}
           </div>
 
-          {product.sizes && product.sizes.length > 0 ? (
-            <div className="text-[9px] font-semibold text-[#8E95A0] uppercase tracking-wider">
-              {product.sizes.slice(0, 2).join(', ')}{product.sizes.length > 2 ? '+' : ''}
+          {product.sizes && product.sizes.length > 0 && (
+            <div className="flex items-center gap-1 mt-1">
+              <span className="text-[10px] text-gray-500 font-medium">
+                O'lcham: {product.sizes.slice(0, 3).join(', ')}
+                {product.sizes.length > 3 ? '+' : ''}
+              </span>
             </div>
-          ) : null}
+          )}
         </div>
       </div>
     </div>

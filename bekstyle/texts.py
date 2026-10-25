@@ -33,15 +33,27 @@ SIZE_PRESETS = [
 
 # status -> (label, message to the customer); order matters: it is the normal flow
 ORDER_STATUSES: dict[str, tuple[str, str]] = {
-    "new": ("🆕 Yangi", "Qabul qildik — admin tez orada tasdiqlaydi."),
-    "accepted": ("✅ Tasdiqlandi", "To'lov tafsilotlarini admin yozadi."),
+    "pending_payment": ("⏳ To'lov kutilmoqda", "Kartaga to'lov qiling va to'lov chekini yuboring."),
+    "payment_review": ("🔍 To'lov tekshirilmoqda", "Chekingiz yuborildi. Admin to'lovni tekshirmoqda."),
+    "paid": ("💳 To'landi", "To'lov tasdiqlandi! Buyurtmangiz qabul qilindi va tayyorlanmoqda."),
+    "payment_rejected": ("❌ To'lov rad etildi", "To'lov cheki tasdiqlanmadi. Iltimos, yangi chek yuklang."),
+    "new": ("🆕 Yangi", "Qabul qilindi — to'lov tekshiruvi kutilmoqda."),
+    "accepted": ("✅ Tasdiqlandi", "To'lov qabul qilindi."),
     "ordered": ("🛒 Pinduoduoga berildi", "Buyurtmangiz yo'lga chiqishga tayyorlanmoqda. Yetkazish: {delivery}."),
-    "shipping": ("🚚 Yo'lda", "Yaqin kunlarda yetib keladi."),
-    "arrived": ("📍 Yetib keldi", "Admin topshirish uchun bog'lanadi."),
+    "shipping": ("🚚 Yo'lda", "Yaqin kunlarda O'zbekistonga yetib keladi."),
+    "arrived": ("📍 Yetib keldi", "Buyurtmangiz yetib keldi. Admin topshirish va cargo hisobi uchun bog'lanadi."),
     "done": ("🏁 Topshirildi", "{brand}ni tanlaganingiz uchun rahmat 🖤"),
     "cancelled": ("❌ Bekor qilindi", "Savol bo'lsa, admin bilan bog'laning."),
 }
-STATUS_FLOW = ["new", "accepted", "ordered", "shipping", "arrived", "done"]
+STATUS_FLOW = [
+    "pending_payment",
+    "payment_review",
+    "paid",
+    "ordered",
+    "shipping",
+    "arrived",
+    "done",
+]
 FINAL_STATUSES = {"done", "cancelled"}
 
 
@@ -160,6 +172,9 @@ def order_text(
     total: int,
     created_at: datetime,
     customer: str = "",
+    selected_card: str | None = None,
+    cargo_price: int | None = None,
+    reject_reason: str | None = None,
 ) -> str:
     """customer: pre-escaped HTML block with name/phone/address; empty for the customer's own view."""
     parts = [f"🧾 <b>Buyurtma #{order_id}</b> · {status_label(status)}"]
@@ -169,9 +184,17 @@ def order_text(
         LINE,
         items_block(items),
         LINE,
-        f"💵 Jami: <b>{format_price(total)}</b>",
-        f"🕒 {format_dt(created_at)}",
+        f"💵 Hozir to'lanadigan: <b>{format_price(total)}</b>",
     ]
+    if selected_card:
+        parts.append(f"💳 Tanlangan karta: <code>{escape(selected_card)}</code>")
+    if cargo_price is not None:
+        parts.append(f"📦 Cargo to'lovi: <b>{format_price(cargo_price)}</b>")
+    else:
+        parts.append("📦 Cargo haqi: <i>Tortilgandan keyin alohida hisoblanadi</i>")
+    if reject_reason:
+        parts.append(f"⚠️ Rad etish sababi: <i>{escape(reject_reason)}</i>")
+    parts.append(f"🕒 {format_dt(created_at)}")
     return "\n".join(parts)
 
 

@@ -99,11 +99,19 @@ class OrderOut(BaseModel):
     phone: str
     city: str = ""
     address: str
-    items: List[Dict[str, Any]] if False else Any
+    items: Any
     total: int
     formatted_total: str
     status: str
     status_label: str
+    selected_card: Optional[str] = None
+    receipt_url: Optional[str] = None
+    receipt_uploaded_at: Optional[datetime] = None
+    reject_reason: Optional[str] = None
+    cargo_price: Optional[int] = None
+    formatted_cargo_price: Optional[str] = None
+    cargo_status: str = "pending"
+    cargo_weight: Optional[float] = None
     created_at: datetime
 
 
@@ -112,15 +120,16 @@ class UserProfileOut(BaseModel):
     name: str
     username: Optional[str] = None
     phone: Optional[str] = None
-    balance: int
-    formatted_balance: str
+    saved_city: Optional[str] = None
+    saved_address: Optional[str] = None
     orders_count: int = 0
     is_admin: bool = False
 
 
 class SettingsOut(BaseModel):
     contact_username: str
-    yuan_rate: int
-    markup_percent: int
     delivery_text: str
     channel_username: str
+    payment_card_1: str
+    payment_card_2: str
+    cargo_info: str

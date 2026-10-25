@@ -5,14 +5,19 @@ export default {
     extend: {
       colors: {
         bek: {
-          bg: '#111315',
-          text: '#F5F2E9',
-          accent: '#C7F464',
-          accentHover: '#b5e350',
-          card: '#1A1D20',
-          cardSoft: '#22262B',
-          border: '#26292E',
-          muted: '#8E95A0',
+          bg: '#F8F9FA',
+          bgDarker: '#F1F3F5',
+          text: '#111827',
+          graphite: '#111827',
+          accent: '#16A34A',
+          accentHover: '#15803D',
+          accentLight: '#DCFCE7',
+          card: '#FFFFFF',
+          cardSoft: '#F3F4F6',
+          border: '#E5E7EB',
+          borderLight: '#F3F4F6',
+          muted: '#6B7280',
+          mutedLight: '#9CA3AF',
         },
       },
       fontFamily: {

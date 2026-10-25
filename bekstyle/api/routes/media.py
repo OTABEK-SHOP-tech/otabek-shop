@@ -12,6 +12,18 @@ logger = logging.getLogger("bekstyle")
 MEDIA_DIR = Path(settings.DATA_DIR) / "media_cache"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
+RECEIPTS_DIR = Path(settings.DATA_DIR) / "receipts"
+RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@router.get("/receipts/{filename}")
+async def get_receipt_file(filename: str):
+    clean_name = Path(filename).name
+    receipt_path = RECEIPTS_DIR / clean_name
+    if receipt_path.is_file():
+        return FileResponse(str(receipt_path))
+    return Response(content="File not found", status_code=404)
+
 FALLBACK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
   <rect width="100%" height="100%" fill="#111315"/>
   <rect x="20" y="20" width="360" height="360" rx="16" fill="#1A1D20" stroke="#26292E" stroke-width="2"/>

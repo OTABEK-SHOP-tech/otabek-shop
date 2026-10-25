@@ -16,6 +16,7 @@ export const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartSummary>({
     items: [],
     total_items: 0,
@@ -27,6 +28,7 @@ export const App: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [settings, setSettings] = useState<ShopSettings | null>(null);
+  const [activePaymentOrder, setActivePaymentOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
 
@@ -60,7 +62,7 @@ export const App: React.FC = () => {
       if (userData) setUser(userData);
       if (settingsData) setSettings(settingsData);
 
-      // Load user orders if user authenticated
+      // Load user orders
       if (userData) {
         api.get<Order[]>('/orders/my').then(setOrders).catch(() => {});
       }
@@ -136,7 +138,7 @@ export const App: React.FC = () => {
     address: string;
   }): Promise<Order> => {
     const newOrder = await api.post<Order>('/orders', orderData);
-    // Reload cart (which was cleared on server) and orders list
+    // Reload cart and orders
     api.get<CartSummary>('/cart').then(setCart).catch(() => {});
     api.get<Order[]>('/orders/my').then(setOrders).catch(() => {});
     return newOrder;
@@ -146,13 +148,18 @@ export const App: React.FC = () => {
     api.get<Order[]>('/orders/my').then(setOrders).catch(() => {});
   };
 
+  const handlePayForOrderFromProfile = (order: Order) => {
+    setActivePaymentOrder(order);
+    setActiveTab('cart');
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#111315] flex flex-col items-center justify-center space-y-3">
-        <div className="w-12 h-12 rounded-2xl bg-[#C7F464] flex items-center justify-center font-black text-[#111315] text-lg animate-pulse tracking-tighter">
+      <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center space-y-3">
+        <div className="w-12 h-12 rounded-2xl bg-gray-900 text-white flex items-center justify-center font-extrabold text-sm tracking-wider shadow-md animate-pulse">
           BS
         </div>
-        <p className="text-xs font-bold text-[#8E95A0] uppercase tracking-widest">
+        <p className="text-xs font-bold text-gray-500 tracking-wider uppercase">
           BEK STYLE yuklanmoqda...
         </p>
       </div>
@@ -160,12 +167,21 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#111315] text-[#F5F2E9] selection:bg-[#C7F464] selection:text-[#111315]">
-      {/* Top Header (only when not in detail modal) */}
+    <div className="min-h-screen bg-[#F8F9FA] text-gray-900 selection:bg-emerald-500 selection:text-white">
+      {/* Top Header (only when not in product detail view) */}
       {!selectedProduct && (
         <Header
+          searchQuery={searchQuery}
+          onSearchChange={(q) => {
+            setSearchQuery(q);
+            if (activeTab !== 'catalog') {
+              setActiveTab('catalog');
+            }
+          }}
           onSearchClick={() => {
-            setActiveTab('catalog');
+            if (activeTab !== 'catalog') {
+              setActiveTab('catalog');
+            }
           }}
         />
       )}
@@ -186,7 +202,9 @@ export const App: React.FC = () => {
                 products={products}
                 categories={categories}
                 selectedCategoryId={selectedCategoryId}
-                onSelectCategory={setSelectedCategoryId}
+                onSelectCategory={(catId) => {
+                  setSelectedCategoryId(catId);
+                }}
                 onSelectProduct={setSelectedProduct}
                 onGoToCatalog={() => setActiveTab('catalog')}
               />
@@ -199,6 +217,7 @@ export const App: React.FC = () => {
                 selectedCategoryId={selectedCategoryId}
                 onSelectCategory={setSelectedCategoryId}
                 onSelectProduct={setSelectedProduct}
+                initialSearch={searchQuery}
               />
             )}
 
@@ -210,7 +229,11 @@ export const App: React.FC = () => {
                 onClearCart={handleClearCart}
                 onSubmitOrder={handleSubmitOrder}
                 onGoToCatalog={() => setActiveTab('catalog')}
+                onGoToProfile={() => setActiveTab('profile')}
                 defaultUserName={user?.name || ''}
+                settings={settings}
+                activePaymentOrder={activePaymentOrder}
+                onClearActivePaymentOrder={() => setActivePaymentOrder(null)}
               />
             )}
 
@@ -221,6 +244,7 @@ export const App: React.FC = () => {
                 settings={settings}
                 onRefreshOrders={handleRefreshOrders}
                 onGoToCatalog={() => setActiveTab('catalog')}
+                onPayForOrder={handlePayForOrderFromProfile}
               />
             )}
           </>
@@ -232,6 +256,7 @@ export const App: React.FC = () => {
         <BottomNav
           activeTab={activeTab}
           onTabChange={(tab) => {
+            haptic.selection();
             setActiveTab(tab);
           }}
           cartCount={cart.total_items}

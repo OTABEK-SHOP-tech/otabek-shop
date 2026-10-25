@@ -82,3 +82,55 @@ async def on_order_status(callback: CallbackQuery, bot: Bot) -> None:
         return
     await show_in(callback, *order_admin_view(order))
     await notify_customer_status(bot, order)
+
+
+@router.callback_query(F.data.startswith("pay:confirm:"))
+async def on_pay_confirm(callback: CallbackQuery, bot: Bot) -> None:
+    order_id = int((callback.data or "").split(":")[2])
+    admin_name = callback.from_user.full_name
+    async with async_session() as session:
+        order = await change_order_status(session, order_id, "paid")
+    if not order:
+        await callback.answer("Buyurtma topilmadi yoki holat o'zgargan.", show_alert=True)
+        return
+    await callback.answer("To'lov tasdiqlandi! ✅", show_alert=True)
+    if callback.message:
+        try:
+            await callback.message.reply(f"✅ <b>Buyurtma #{order_id} to'lovi tasdiqlandi.</b> (Admin: {admin_name})")
+        except Exception:
+            pass
+    await notify_customer_status(bot, order)
+
+
+@router.callback_query(F.data.startswith("pay:reject:"))
+async def on_pay_reject(callback: CallbackQuery, bot: Bot) -> None:
+    order_id = int((callback.data or "").split(":")[2])
+    admin_name = callback.from_user.full_name
+    reason = "To'lov hisobga kelib tushmadi yoki chek yaroqsiz"
+    async with async_session() as session:
+        order = await session.get(Order, order_id)
+        if order:
+            order.status = "payment_rejected"
+            order.reject_reason = reason
+            await session.commit()
+            await session.refresh(order)
+    if not order:
+        await callback.answer("Buyurtma topilmadi.", show_alert=True)
+        return
+    await callback.answer("To'lov rad etildi! ❌", show_alert=True)
+    if callback.message:
+        try:
+            await callback.message.reply(
+                f"❌ <b>Buyurtma #{order_id} to'lovi rad etildi.</b> Sabab: {reason}. (Admin: {admin_name})"
+            )
+        except Exception:
+            pass
+    try:
+        await bot.send_message(
+            order.user_id,
+            f"❌ <b>{t.BRAND}</b> · Buyurtma #{order_id}\n\n"
+            f"To'lov chekingiz rad etildi:\n<i>{reason}</i>\n\n"
+            "Iltimos, Mini App orqali do'konga kirib qayta to'lov qiling va to'g'ri chekni yuklang.",
+        )
+    except Exception:
+        pass

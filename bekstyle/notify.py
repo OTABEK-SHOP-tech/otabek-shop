@@ -15,7 +15,7 @@ from sqlalchemy import select, update
 
 from bekstyle import texts as t
 from bekstyle.db import Admin, Order, Product, User, async_session, get_setting
-from bekstyle.keyboards import Button, order_admin_kb
+from bekstyle.keyboards import Button, order_admin_kb, order_receipt_admin_kb
 from bekstyle.visuals import BANNER
 
 logger = logging.getLogger(__name__)
@@ -127,6 +127,56 @@ async def notify_admins_new_order(bot: Bot, order: Order) -> None:
             await bot.send_message(admin_id, "🔔 <b>Yangi buyurtma!</b>\n\n" + text, reply_markup=markup)
         except TelegramAPIError as exc:  # one unreachable admin must not block the others
             logger.warning("Order #%s alert to admin %s failed: %s", order.id, admin_id, exc)
+
+
+async def notify_admins_receipt_uploaded(bot: Bot, order: Order, file_path: str) -> None:
+    from pathlib import Path
+    async with async_session() as session:
+        admin_ids = list((await session.scalars(select(Admin.telegram_id))).all())
+
+    customer = t.customer_block(
+        order.user_id,
+        order.customer_name,
+        order.customer_username,
+        order.phone,
+        order.address,
+    )
+    caption_text = (
+        f"🧾 <b>Yangi to'lov cheki kelib tushdi!</b>\n\n"
+        + t.order_text(
+            order.id,
+            order.status,
+            order.items,
+            order.total,
+            order.created_at,
+            customer,
+            selected_card=order.selected_card,
+            cargo_price=order.cargo_price,
+            reject_reason=order.reject_reason,
+        )
+    )
+    markup = order_receipt_admin_kb(order.id, order.customer_username)
+    file_ext = Path(file_path).suffix.lower()
+    is_image = file_ext in [".jpg", ".jpeg", ".png", ".webp"]
+
+    for admin_id in admin_ids:
+        try:
+            if is_image:
+                await bot.send_photo(
+                    admin_id,
+                    photo=FSInputFile(file_path),
+                    caption=t.clip(caption_text, t.CAPTION_LIMIT),
+                    reply_markup=markup,
+                )
+            else:
+                await bot.send_document(
+                    admin_id,
+                    document=FSInputFile(file_path),
+                    caption=t.clip(caption_text, t.CAPTION_LIMIT),
+                    reply_markup=markup,
+                )
+        except TelegramAPIError as exc:
+            logger.warning("Receipt alert for order #%s to admin %s failed: %s", order.id, admin_id, exc)
 
 
 async def notify_customer_status(bot: Bot, order: Order) -> None:

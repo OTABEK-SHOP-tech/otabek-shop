@@ -22,11 +22,11 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
         }}
         className={`whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
           selectedCategoryId === null
-            ? 'bg-[#C7F464] text-[#111315] shadow-sm'
-            : 'bg-[#1A1D20] text-[#8E95A0] border border-[#26292E] hover:text-[#F5F2E9]'
+            ? 'bg-gray-900 text-white shadow-sm ring-2 ring-gray-900/10'
+            : 'bg-white text-gray-600 border border-gray-200/90 hover:bg-gray-50'
         }`}
       >
-        🔥 Barchasi
+        ⚡ Barchasi
       </button>
 
       {categories.map((cat) => {
@@ -40,14 +40,18 @@ export const CategoryChips: React.FC<CategoryChipsProps> = ({
             }}
             className={`whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
               isSelected
-                ? 'bg-[#C7F464] text-[#111315] shadow-sm'
-                : 'bg-[#1A1D20] text-[#8E95A0] border border-[#26292E] hover:text-[#F5F2E9]'
+                ? 'bg-gray-900 text-white shadow-sm ring-2 ring-gray-900/10'
+                : 'bg-white text-gray-600 border border-gray-200/90 hover:bg-gray-50'
             }`}
           >
             <span>{cat.emoji}</span>
             <span>{cat.name}</span>
             {cat.product_count > 0 && (
-              <span className={`text-[10px] opacity-70 ${isSelected ? 'text-[#111315]' : 'text-[#8E95A0]'}`}>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                }`}
+              >
                 {cat.product_count}
               </span>
             )}
