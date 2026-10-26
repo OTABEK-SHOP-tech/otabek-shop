@@ -117,7 +117,7 @@ export const BagPage: React.FC<BagPageProps> = ({
   // Payment card selection
   const card1 = settings?.payment_card_1 || '4916 9903 4816 9779';
   const card2 = settings?.payment_card_2 || '9860 2301 0748 6030';
-  const cargoCarrier = settings?.cargo_carrier || 'Ali Brand Kargo';
+  const cargoCarrier = settings?.cargo_carrier || 'Ali brand kargo';
   const [selectedCard, setSelectedCard] = useState<string>(card1);
   const [copiedCard, setCopiedCard] = useState<string | null>(null);
 
@@ -416,7 +416,8 @@ export const BagPage: React.FC<BagPageProps> = ({
         <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start gap-2">
           <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed">
-            <strong>{cargoCarrier}:</strong> kargo haqi tortilgandan keyin alohida hisoblanadi. Hozir faqat mahsulotlar summasini to'lang.
+            <strong>Kargo: {cargoCarrier}</strong> (100gr — 12 000 so'm, 150gr — 24 000 so'm).<br />
+            Ali brand kargo dan olib kelinadi. Kargo haqi tortilgandan keyin alohida to'lanadi. Hozir faqat kiyimlar summasini to'lang.
           </p>
         </div>
 
@@ -837,10 +838,11 @@ export const BagPage: React.FC<BagPageProps> = ({
       {/* Cargo Info Note (Required: Cargo haqi tortilgandan keyin alohida hisoblanadi) */}
       <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 flex items-start gap-2.5">
         <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-900 space-y-0.5">
-          <p className="font-bold">{cargoCarrier}</p>
+        <div className="text-xs text-amber-900 space-y-1">
+          <p className="font-bold">Kargo: {cargoCarrier}</p>
           <p className="text-amber-800/90 leading-relaxed text-[11px]">
-            Kargo haqi tortilgandan keyin alohida hisoblanadi. Tasdiqlangan summa buyurtmangizga alohida qo‘shiladi.
+            <strong>Tarif:</strong> 100gr — 12 000 so'm, 150gr — 24 000 so'm.<br />
+            Ali brand kargo dan olib kelinadi. Kargo haqi tovar yetib kelgach tortilib alohida hisoblanadi.
           </p>
         </div>
       </div>
