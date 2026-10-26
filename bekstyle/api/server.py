@@ -65,15 +65,6 @@ async def lifespan(app: FastAPI):
     ensure_visuals()
     await init_db()
 
-    try:
-        from bekstyle.importer import import_100_products
-        from bekstyle.db import async_session
-        async with async_session() as session:
-            res = await import_100_products(session)
-            logger.info('Streetwear 100 bulk sync result: %s', res)
-    except Exception as exc:
-        logger.error('Failed to run bulk 100 import on startup: %s', exc)
-
     # Start Telegram Bot Polling in background task if BOT_TOKEN is set
     if settings.BOT_TOKEN:
         try:

@@ -347,9 +347,8 @@ async def seed_categories(session: AsyncSession) -> dict[str, int]:
 
 
 async def seed_default_products(session: AsyncSession, cat_map: dict[str, int]) -> None:
-    prod_count = (await session.execute(select(Product.id).limit(1))).first()
-    if prod_count:
-        return
+    # Do not auto-seed dummy/placeholder products
+    return
 
     for item in DEFAULT_PRODUCTS:
         cat_id = cat_map.get(item["category_name"])
