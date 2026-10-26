@@ -102,6 +102,7 @@ export interface ShopSettings {
   channel_username: string;
   payment_card_1: string;
   payment_card_2: string;
+  cargo_carrier: string;
   cargo_info: string;
 }
 

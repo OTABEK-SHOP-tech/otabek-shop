@@ -152,6 +152,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "payment_card_1": "4916 9903 4816 9779",
     "payment_card_2": "9860 2301 0748 6030",
     "delivery_text": "O'zbekiston bo'ylab tezkor yetkazib beriladi",
+    "cargo_carrier": "Ali Brand Kargo",
     "cargo_info": "Cargo haqi tortilgandan keyin alohida hisoblanadi",
     "channel_id": "",
     "channel_username": "bek_style_shop",

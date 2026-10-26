@@ -117,6 +117,7 @@ export const BagPage: React.FC<BagPageProps> = ({
   // Payment card selection
   const card1 = settings?.payment_card_1 || '4916 9903 4816 9779';
   const card2 = settings?.payment_card_2 || '9860 2301 0748 6030';
+  const cargoCarrier = settings?.cargo_carrier || 'Ali Brand Kargo';
   const [selectedCard, setSelectedCard] = useState<string>(card1);
   const [copiedCard, setCopiedCard] = useState<string | null>(null);
 
@@ -290,7 +291,7 @@ export const BagPage: React.FC<BagPageProps> = ({
       `\n\nHozir to'lanadigan summa: ${currentOrder.formatted_total}\n` +
       `Tanlangan karta: ${currentOrder.selected_card || selectedCard}\n` +
       `Holat: To'lov tekshirilmoqda 🔍\n` +
-      `Cargo: Tortilgandan keyin alohida hisoblanadi 📦`;
+      `Kargo: ${cargoCarrier}. Tortilgandan keyin alohida hisoblanadi 📦`;
 
     return (
       <div className="bs-bag-page bs-bag-success min-h-[80vh] flex flex-col items-center justify-center p-4 text-center max-w-md mx-auto space-y-4 animate-fadeIn pb-32">
@@ -348,7 +349,7 @@ export const BagPage: React.FC<BagPageProps> = ({
           </div>
           <div className="p-2 rounded-xl bg-amber-50 text-amber-800 text-[11px] font-medium flex items-center gap-1.5">
             <Info size={14} className="shrink-0 text-amber-600" />
-            <span>Cargo haqi tovar yetib kelgach tortilib alohida hisoblanadi.</span>
+            <span>{cargoCarrier}: kargo haqi tortilgandan keyin alohida hisoblanadi.</span>
           </div>
         </div>
 
@@ -415,7 +416,7 @@ export const BagPage: React.FC<BagPageProps> = ({
         <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start gap-2">
           <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed">
-            <strong>Muhim:</strong> Cargo haqi tortilgandan keyin alohida hisoblanadi. Hozir faqat mahsulotlar summasini to'lang.
+            <strong>{cargoCarrier}:</strong> kargo haqi tortilgandan keyin alohida hisoblanadi. Hozir faqat mahsulotlar summasini to'lang.
           </p>
         </div>
 
@@ -679,7 +680,7 @@ export const BagPage: React.FC<BagPageProps> = ({
           <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start gap-2">
             <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <span className="text-[11px] leading-relaxed">
-              Cargo haqi tortilgandan keyin alohida hisoblanadi. Keyingi bosqichda kartaga to'lov qilasiz.
+              {cargoCarrier}: kargo haqi tortilgandan keyin alohida hisoblanadi. Keyingi bosqichda kartaga to'lov qilasiz.
             </span>
           </div>
 
@@ -837,7 +838,7 @@ export const BagPage: React.FC<BagPageProps> = ({
       <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 flex items-start gap-2.5">
         <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
         <div className="text-xs text-amber-900 space-y-0.5">
-          <p className="font-bold">Yetkazish va kargo haqida:</p>
+          <p className="font-bold">{cargoCarrier}</p>
           <p className="text-amber-800/90 leading-relaxed text-[11px]">
             Kargo haqi tortilgandan keyin alohida hisoblanadi. Tasdiqlangan summa buyurtmangizga alohida qo‘shiladi.
           </p>

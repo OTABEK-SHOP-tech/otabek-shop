@@ -133,4 +133,5 @@ class SettingsOut(BaseModel):
     channel_username: str
     payment_card_1: str
     payment_card_2: str
+    cargo_carrier: str
     cargo_info: str

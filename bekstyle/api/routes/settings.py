@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from bekstyle.api.schemas import SettingsOut
-from bekstyle.db import get_db, get_setting, Admin, User
+from bekstyle.db import DEFAULT_SETTINGS, get_db, get_setting, Admin, User
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -23,6 +23,7 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
     card1 = await get_setting(db, "payment_card_1") or "4916 9903 4816 9779"
     card2 = await get_setting(db, "payment_card_2") or "9860 2301 0748 6030"
     cargo = await get_setting(db, "cargo_info") or "Cargo haqi tortilgandan keyin alohida hisoblanadi"
+    cargo_carrier = await get_setting(db, "cargo_carrier") or DEFAULT_SETTINGS["cargo_carrier"]
 
     return SettingsOut(
         contact_username=contact,
@@ -30,5 +31,6 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         channel_username=channel,
         payment_card_1=card1,
         payment_card_2=card2,
+        cargo_carrier=cargo_carrier,
         cargo_info=cargo,
     )
