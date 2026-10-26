@@ -101,3 +101,12 @@ def test_url_userinfo_port_fragment_and_canonical_pid_rejected():
     doc["products"].append(second)
     with pytest.raises(ValueError):
         validate_manifest(doc, now=NOW)
+
+
+def test_optional_variant_axes_require_explicit_null_and_cannot_mix():
+    plan = validate_manifest(manifest(variants=[{"sku_id": "sku-1", "color": None, "size": None, "cost_cny": 40, "in_stock": True}]), now=NOW)
+    assert plan[0].variants[0].color is None and plan[0].variants[0].size is None
+    with pytest.raises(ValueError):
+        validate_manifest(manifest(variants=[{"sku_id": "sku-1", "size": "L", "cost_cny": 40, "in_stock": True}]), now=NOW)
+    with pytest.raises(ValueError):
+        validate_manifest(manifest(variants=[{"sku_id": "sku-1", "color": None, "size": "L", "cost_cny": 40, "in_stock": True}, {"sku_id": "sku-2", "color": "Qora", "size": "M", "cost_cny": 40, "in_stock": True}]), now=NOW)

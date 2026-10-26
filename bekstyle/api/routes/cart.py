@@ -12,6 +12,7 @@ from bekstyle.api.schemas import (
     format_som,
 )
 from bekstyle.db import CartItem, Product, get_db
+from bekstyle.services import is_product_variant_available
 
 router = APIRouter(prefix="/cart", tags=["cart"])
 
@@ -77,6 +78,10 @@ async def add_to_cart(
     prod = await db.get(Product, payload.product_id)
     if not prod or not prod.in_stock:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mahsulot mavjud emas")
+    if not is_product_variant_available(prod, payload.color, payload.size):
+        raise HTTPException(status_code=409, detail="Bu rang va o‘lcham hozir mavjud emas. Qayta tanlang.")
+    if payload.qty < 1 or payload.qty > 99:
+        raise HTTPException(status_code=400, detail="Mahsulot soni 1 dan 99 gacha bo‘lsin")
 
     stmt = select(CartItem).where(
         CartItem.user_id == user.id,
@@ -86,14 +91,16 @@ async def add_to_cart(
     )
     existing = (await db.execute(stmt)).scalars().first()
     if existing:
-        existing.qty += max(1, payload.qty)
+        if existing.qty + payload.qty > 99:
+            raise HTTPException(status_code=400, detail="Mahsulot soni 99 tadan oshmasin")
+        existing.qty += payload.qty
     else:
         new_item = CartItem(
             user_id=user.id,
             product_id=payload.product_id,
             color=payload.color,
             size=payload.size,
-            qty=max(1, payload.qty),
+            qty=payload.qty,
         )
         db.add(new_item)
 
@@ -113,6 +120,8 @@ async def update_cart_qty(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Element topilmadi")
 
+    if payload.qty > 99:
+        raise HTTPException(status_code=400, detail="Mahsulot soni 99 tadan oshmasin")
     if payload.qty <= 0:
         await db.delete(item)
     else:

@@ -84,6 +84,8 @@ class Product(Base):
     views: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     channel_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    source_details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     category: Mapped[Category] = relationship(lazy="joined")
 
@@ -397,6 +399,8 @@ async def migrate_columns() -> None:
         ("products", "is_new", "BOOLEAN DEFAULT TRUE"),
         ("products", "is_hit", "BOOLEAN DEFAULT FALSE"),
         ("products", "views", "INTEGER DEFAULT 0"),
+        ("products", "source_key", "VARCHAR(160)"),
+        ("products", "source_details", "JSON"),
     ]
     # Inspect first so repeated SQLite startup never relies on swallowed DDL errors.
     async with engine.begin() as conn:
@@ -409,6 +413,10 @@ async def migrate_columns() -> None:
         await conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_user_idempotency "
             "ON orders (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL"
+        ))
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_products_source_key "
+            "ON products (source_key) WHERE source_key IS NOT NULL"
         ))
 
 

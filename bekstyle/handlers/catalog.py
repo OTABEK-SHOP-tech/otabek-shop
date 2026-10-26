@@ -57,8 +57,8 @@ async def build_card(
     if product is None:
         return None
     source_variants = available_source_variants(product)
-    colors = list(dict.fromkeys(v["color"] for v in source_variants)) if source_variants is not None else product.colors
-    sizes = list(dict.fromkeys(v["size"] for v in source_variants)) if source_variants is not None else product.sizes
+    colors = list(dict.fromkeys(v["color"] for v in source_variants if v["color"] is not None)) if source_variants is not None else product.colors
+    sizes = list(dict.fromkeys(v["size"] for v in source_variants if v["size"] is not None)) if source_variants is not None else product.sizes
     delivery = await get_setting(session, "delivery_text")
     caption = t.product_caption(
         product.title,
@@ -198,8 +198,8 @@ async def on_buy(callback: CallbackQuery) -> None:
             return
         back = f"bk:{pid}:{cid}"
         source_variants = available_source_variants(product)
-        colors = list(dict.fromkeys(v["color"] for v in source_variants)) if source_variants is not None else product.colors
-        sizes = list(dict.fromkeys(v["size"] for v in source_variants)) if source_variants is not None else product.sizes
+        colors = list(dict.fromkeys(v["color"] for v in source_variants if v["color"] is not None)) if source_variants is not None else product.colors
+        sizes = list(dict.fromkeys(v["size"] for v in source_variants if v["size"] is not None)) if source_variants is not None else product.sizes
         if colors and ci == "x":
             if msg:
                 await msg.edit_reply_markup(

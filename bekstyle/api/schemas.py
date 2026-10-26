@@ -17,6 +17,11 @@ class CategoryOut(BaseModel):
     product_count: int = 0
 
 
+class ProductVariantOut(BaseModel):
+    color: Optional[str]
+    size: Optional[str]
+
+
 class ProductOut(BaseModel):
     id: int
     title: str
@@ -37,6 +42,7 @@ class ProductOut(BaseModel):
     is_hit: bool
     views: int = 0
     is_demo: bool = False
+    available_variants: Optional[List[ProductVariantOut]] = None
 
 
 class CartItemAdd(BaseModel):

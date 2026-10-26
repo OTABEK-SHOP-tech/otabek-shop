@@ -31,8 +31,8 @@ class CostInputs:
 @dataclass(frozen=True)
 class VariantPlan:
     sku_id: str
-    color: str
-    size: str
+    color: str | None
+    size: str | None
     cost_cny: Decimal
     sale_price_som: int
     target_profit_som: int
@@ -67,6 +67,12 @@ def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} is required")
     return value.strip()
+
+
+def _optional_text(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    return _text(value, field)
 
 
 def _official_url(value: object) -> str:
@@ -166,8 +172,11 @@ def validate_manifest(document: object, *, now: datetime | None = None) -> tuple
         for variant in variants_raw:
             if not isinstance(variant, dict):
                 raise ValueError("each variant must be an object")
-            sku, color, size = (_text(variant.get(k), k) for k in ("sku_id", "color", "size"))
-            if any(len(value) > limit for value, limit in ((sku, 128), (color, 64), (size, 32))):
+            if "color" not in variant or "size" not in variant:
+                raise ValueError("each variant must explicitly include color and size (null allowed)")
+            sku = _text(variant.get("sku_id"), "sku_id")
+            color, size = _optional_text(variant.get("color"), "color"), _optional_text(variant.get("size"), "size")
+            if any(value is not None and len(value) > limit for value, limit in ((sku, 128), (color, 64), (size, 32))):
                 raise ValueError("variant field is too long")
             if not isinstance(variant.get("in_stock"), bool):
                 raise ValueError("variant in_stock must be explicitly true or false")
@@ -179,5 +188,8 @@ def validate_manifest(document: object, *, now: datetime | None = None) -> tuple
                 raise ValueError("cost_cny must be greater than zero")
             price = sale_price(cost, costs, target)
             variants.append(VariantPlan(sku, color, size, cost, price, target, variant["in_stock"]))
+        for axis, values in (("color", [v.color for v in variants]), ("size", [v.size for v in variants])):
+            if any(v is None for v in values) and any(v is not None for v in values):
+                raise ValueError(f"{axis} cannot mix null and string values within one product")
         plans.append(ProductPlan(url, pid, title, category, photos, tuple(variants), checked_at, costs))
     return tuple(plans)

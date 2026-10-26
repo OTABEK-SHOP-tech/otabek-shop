@@ -60,7 +60,7 @@ def parse_list(text: str) -> list[str]:
     return [part.strip()[:32] for part in text.split(",") if part.strip()][:12]
 
 
-def available_source_variants(product: Product) -> list[dict[str, str]] | None:
+def available_source_variants(product: Product) -> list[dict[str, str | None]] | None:
     """Return sellable source SKU pairs; None means this is a legacy product."""
     if not product.source_key:
         return None
@@ -68,15 +68,19 @@ def available_source_variants(product: Product) -> list[dict[str, str]] | None:
     variants = raw.get("variants")
     if not isinstance(variants, list):
         return []
-    result: list[dict[str, str]] = []
-    seen: set[tuple[str, str]] = set()
+    result: list[dict[str, str | None]] = []
+    seen: set[tuple[str | None, str | None]] = set()
     for variant in variants:
         if not isinstance(variant, dict) or variant.get("in_stock") is not True:
             continue
-        color, size = variant.get("color"), variant.get("size")
-        if not isinstance(color, str) or not color.strip() or not isinstance(size, str) or not size.strip():
+        if "color" not in variant or "size" not in variant:
             continue
-        pair = (color.strip(), size.strip())
+        color, size = variant.get("color"), variant.get("size")
+        if color is not None and (not isinstance(color, str) or not color.strip()):
+            continue
+        if size is not None and (not isinstance(size, str) or not size.strip()):
+            continue
+        pair = (color.strip() if isinstance(color, str) else None, size.strip() if isinstance(size, str) else None)
         if pair not in seen:
             seen.add(pair)
             result.append({"color": pair[0], "size": pair[1]})

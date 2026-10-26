@@ -36,6 +36,20 @@ def test_malformed_source_fails_closed() -> None:
     assert not is_product_variant_available(p, "Black", "M")
 
 
+def test_source_variant_can_have_absent_axes() -> None:
+    p = source_product(variants=[
+        {"color": None, "size": None, "in_stock": True},
+        {"color": "Black", "size": None, "in_stock": True},
+        {"color": "Black", "in_stock": True},
+    ])
+    assert available_source_variants(p) == [
+        {"color": None, "size": None}, {"color": "Black", "size": None}
+    ]
+    assert is_product_variant_available(p, None, None)
+    assert is_product_variant_available(p, "Black", None)
+    assert not is_product_variant_available(p, "White", None)
+
+
 @pytest.mark.usefixtures("db")
 async def test_service_rejects_invalid_source_pair() -> None:
     async with async_session() as session:

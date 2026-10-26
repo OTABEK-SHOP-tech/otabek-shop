@@ -14,6 +14,7 @@ export interface Product {
   photos: string[];
   colors: string[];
   sizes: string[];
+  available_variants?: { color: string | null; size: string | null }[] | null;
   in_stock: boolean;
   is_new: boolean;
   is_hit: boolean;

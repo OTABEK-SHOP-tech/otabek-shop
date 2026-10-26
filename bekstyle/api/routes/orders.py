@@ -12,6 +12,7 @@ from bekstyle.api.schemas import OrderCreate, OrderOut, format_som
 from bekstyle.config import settings
 from bekstyle.db import CartItem, Order, Product, get_db, utcnow, is_demo_product
 from bekstyle.texts import ORDER_STATUSES
+from bekstyle.services import is_product_variant_available
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -114,6 +115,8 @@ async def create_order(
             raise HTTPException(status_code=409, detail="Mahsulot rangini qayta tanlang")
         if (prod.sizes and size not in prod.sizes) or (not prod.sizes and size):
             raise HTTPException(status_code=409, detail="Mahsulot o‘lchamini qayta tanlang")
+        if not is_product_variant_available(prod, color, size):
+            raise HTTPException(status_code=409, detail="Tanlangan rang va o‘lcham hozir mavjud emas")
         return {"product_id": prod.id, "title": prod.title, "price": prod.price,
                 "color": color or "", "size": size or "", "qty": qty,
                 "photo": prod.photos[0] if prod.photos else ""}

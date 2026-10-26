@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import func, select
 
-from bekstyle.api.routes import media, orders, products
+from bekstyle.api.routes import cart, media, orders, products
 from bekstyle.config import settings
 from bekstyle.db import Admin, Category, DEFAULT_PRODUCTS, Order, Product, async_session, migrate_columns
 
@@ -35,6 +35,7 @@ async def client(db):
     app.include_router(orders.router, prefix="/api")
     app.include_router(media.router, prefix="/api")
     app.include_router(products.router, prefix="/api")
+    app.include_router(cart.router, prefix="/api")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as value:
         yield value
 
@@ -162,3 +163,67 @@ async def test_admin_payment_transition_requires_review(client):
 async def test_additive_migrations_are_repeatable():
     await migrate_columns()
     await migrate_columns()
+
+
+async def source_product():
+    pid = await product()
+    async with async_session() as session:
+        item = await session.get(Product, pid)
+        item.colors = ["Qora", "Oq"]
+        item.sizes = ["L", "M"]
+        item.source_key = "pdd:verified-test"
+        item.source_details = {
+            "source_url": "https://mobile.yangkeduo.com/goods.html?goods_id=123",
+            "cost_inputs": {"yuan_rate": "1850"},
+            "target_profit_som": 30000,
+            "variants": [
+                {"sku_id": "1", "color": "Qora", "size": "L", "cost_cny": "40", "in_stock": True},
+                {"sku_id": "2", "color": "Oq", "size": "M", "cost_cny": "42", "in_stock": True},
+                {"sku_id": "3", "color": "Qora", "size": "M", "cost_cny": "43", "in_stock": False},
+            ],
+        }
+        await session.commit()
+    return pid
+
+
+async def test_source_catalog_exposes_only_available_pairs_without_private_costs(client):
+    pid = await source_product()
+    response = await client.get(f"/api/products/{pid}")
+    body = response.json()
+    assert body["available_variants"] == [{"color": "Qora", "size": "L"}, {"color": "Oq", "size": "M"}]
+    for private_field in ("cost_cny", "cost_inputs", "source_details", "source_key", "source_url", "target_profit_som", "sku_id"):
+        assert private_field not in response.text
+
+
+async def test_source_cart_and_direct_order_reject_unavailable_pairs(client):
+    pid = await source_product()
+    for color, size in [("Qora", "M"), ("Oq", "L")]:
+        response = await client.post("/api/cart", headers=auth(), json={"product_id": pid, "color": color, "size": size, "qty": 1})
+        assert response.status_code == 409
+        response = await client.post("/api/orders", headers=auth(), json=payload(pid, color=color, size=size))
+        assert response.status_code == 409
+    response = await client.post("/api/cart", headers=auth(), json={"product_id": pid, "color": "Qora", "size": "L", "qty": 1})
+    assert response.status_code == 200
+    async with async_session() as session:
+        item = await session.get(Product, pid)
+        details = dict(item.source_details)
+        details["variants"] = [{**v, "in_stock": False} for v in details["variants"]]
+        item.source_details = details
+        await session.commit()
+    response = await client.post("/api/orders", headers=auth(), json=payload(pid))
+    assert response.status_code == 409
+
+
+async def test_source_accessory_without_variant_axes_is_orderable(client):
+    pid = await product()
+    async with async_session() as session:
+        item = await session.get(Product, pid)
+        item.colors = []
+        item.sizes = []
+        item.source_key = "pdd:accessory-test"
+        item.source_details = {"variants": [{"sku_id": "single", "color": None, "size": None, "in_stock": True}]}
+        await session.commit()
+    response = await client.get(f"/api/products/{pid}")
+    assert response.json()["available_variants"] == [{"color": None, "size": None}]
+    response = await client.post("/api/orders", headers=auth(), json=payload(pid, color=None, size=None))
+    assert response.status_code == 200

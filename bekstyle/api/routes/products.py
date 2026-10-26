@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bekstyle.api.schemas import ProductOut, format_som
 from bekstyle.db import Category, Product, get_db, is_demo_product, DEFAULT_PRODUCTS
+from bekstyle.services import available_source_variants
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -19,6 +20,7 @@ def to_product_out(p: Product) -> ProductOut:
         disc = int(round((p.old_price - p.price) / p.old_price * 100))
 
     cat_name = p.category.name if p.category else ""
+    variants = available_source_variants(p)
     return ProductOut(
         id=p.id,
         title=title,
@@ -32,8 +34,9 @@ def to_product_out(p: Product) -> ProductOut:
         category_id=p.category_id,
         category_name=cat_name,
         photos=p.photos or [],
-        colors=p.colors or [],
-        sizes=p.sizes or [],
+        colors=list(dict.fromkeys(v["color"] for v in variants if v["color"] is not None)) if variants is not None else (p.colors or []),
+        sizes=list(dict.fromkeys(v["size"] for v in variants if v["size"] is not None)) if variants is not None else (p.sizes or []),
+        available_variants=variants,
         in_stock=p.in_stock,
         is_new=p.is_new,
         is_hit=p.is_hit,
@@ -85,7 +88,7 @@ async def list_products(
     # Filter size if requested
     if size:
         sz_clean = size.strip().upper()
-        products = [p for p in products if any(s.strip().upper() == sz_clean for s in (p.sizes or []))]
+        products = [p for p in products if any(s.strip().upper() == sz_clean for s in to_product_out(p).sizes)]
 
     return [to_product_out(p) for p in products]
 

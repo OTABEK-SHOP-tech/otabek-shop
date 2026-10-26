@@ -11,6 +11,19 @@ Cargo is billed separately after weighing and is never represented as a zero del
 
 The inherited eight AI sample products are explicitly identified as demo items. They remain visible for design preview, but checkout rejects them. Add actual sourced products through the existing admin tools before accepting customer orders.
 
+## Verified Pinduoduo imports
+
+The importer processes supplied, verified product records. It does not scrape Pinduoduo, bypass login, or discover the whole marketplace. A real source URL, official product photos, a source product ID, a recent timezone-aware `checked_at` and `verified: true` are required for each product. Each SKU must provide its actual ID, cost in CNY, stock flag, and explicit color/size (null when that option genuinely does not apply).
+
+Every product must include explicit `costs`: `yuan_rate`, `china_shipping_cny`, `intermediary_fee_som`, and `other_costs_som`. No exchange rate or fee is assumed. `target_profit_som` must be 5000, 10000, or 30000. The retail price covers the most expensive verified SKU, all supplied costs and the target profit, rounded up to the next 1000 UZS. Cargo remains separate; net profit depends on the supplied costs being complete.
+
+```powershell
+python -m bekstyle.import_catalog verified-catalog.json
+python -m bekstyle.import_catalog verified-catalog.json --apply
+```
+
+The first command previews calculated prices without loading database settings or writing. The second atomically upserts the supplied products by source ID in the configured database, preserving unrelated products. Source URLs, CNY costs, fees and profit targets stay private. Customer interfaces and checkout accept only available source color/size combinations. No import posts to Telegram channels or sends notifications.
+
 ## Environment
 
 Create a local `.env` from `.env.example`. Never commit actual credentials.
