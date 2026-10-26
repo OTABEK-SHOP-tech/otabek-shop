@@ -20,9 +20,11 @@ from bekstyle.notify import (
 )
 from bekstyle.services import (
     add_to_cart,
+    available_source_variants,
     cart_count,
     catalog_product_ids,
     categories_with_counts,
+    is_product_variant_available,
 )
 
 router = Router(name="catalog")
@@ -54,12 +56,15 @@ async def build_card(
     product = await session.get(Product, product_id)
     if product is None:
         return None
+    source_variants = available_source_variants(product)
+    colors = list(dict.fromkeys(v["color"] for v in source_variants)) if source_variants is not None else product.colors
+    sizes = list(dict.fromkeys(v["size"] for v in source_variants)) if source_variants is not None else product.sizes
     delivery = await get_setting(session, "delivery_text")
     caption = t.product_caption(
         product.title,
         product.price,
-        product.colors,
-        product.sizes,
+        colors,
+        sizes,
         product.description,
         delivery,
         product.in_stock,
@@ -192,26 +197,33 @@ async def on_buy(callback: CallbackQuery) -> None:
             await callback.answer("⚪️ Bu model hozircha tugagan", show_alert=True)
             return
         back = f"bk:{pid}:{cid}"
-        if product.colors and ci == "x":
+        source_variants = available_source_variants(product)
+        colors = list(dict.fromkeys(v["color"] for v in source_variants)) if source_variants is not None else product.colors
+        sizes = list(dict.fromkeys(v["size"] for v in source_variants)) if source_variants is not None else product.sizes
+        if colors and ci == "x":
             if msg:
                 await msg.edit_reply_markup(
-                    reply_markup=picker_kb(product.colors, lambda i: f"b:{pid}:{cid}:{i}:x", back)
+                    reply_markup=picker_kb(colors, lambda i: f"b:{pid}:{cid}:{i}:x", back)
                 )
             await callback.answer("🎨 Rangni tanlang")
             return
-        if product.sizes and si == "x":
+        if sizes and si == "x":
             if msg:
                 await msg.edit_reply_markup(
-                    reply_markup=picker_kb(product.sizes, lambda j: f"b:{pid}:{cid}:{ci}:{j}", back)
+                    reply_markup=picker_kb(sizes, lambda j: f"b:{pid}:{cid}:{ci}:{j}", back)
                 )
             await callback.answer("📏 O'lchamni tanlang")
             return
-        color_ok, color = _pick(product.colors, ci)
-        size_ok, size = _pick(product.sizes, si)
-        if not (color_ok and size_ok):
+        color_ok, color = _pick(colors, ci)
+        size_ok, size = _pick(sizes, si)
+        if not (color_ok and size_ok) or not is_product_variant_available(product, color, size):
             await callback.answer("Ma'lumot yangilandi, qaytadan tanlang", show_alert=True)
             return
-        await add_to_cart(session, user_id, pid, color, size)
+        try:
+            await add_to_cart(session, user_id, pid, color, size)
+        except ValueError:
+            await callback.answer("Bu rang/o'lcham hozir mavjud emas", show_alert=True)
+            return
         card = await build_card(session, user_id, cid, product_id=pid)
     if msg and card:
         await msg.edit_reply_markup(reply_markup=card.markup)

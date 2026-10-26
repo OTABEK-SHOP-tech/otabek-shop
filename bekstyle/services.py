@@ -60,6 +60,38 @@ def parse_list(text: str) -> list[str]:
     return [part.strip()[:32] for part in text.split(",") if part.strip()][:12]
 
 
+def available_source_variants(product: Product) -> list[dict[str, str]] | None:
+    """Return sellable source SKU pairs; None means this is a legacy product."""
+    if not product.source_key:
+        return None
+    raw = product.source_details if isinstance(product.source_details, dict) else {}
+    variants = raw.get("variants")
+    if not isinstance(variants, list):
+        return []
+    result: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for variant in variants:
+        if not isinstance(variant, dict) or variant.get("in_stock") is not True:
+            continue
+        color, size = variant.get("color"), variant.get("size")
+        if not isinstance(color, str) or not color.strip() or not isinstance(size, str) or not size.strip():
+            continue
+        pair = (color.strip(), size.strip())
+        if pair not in seen:
+            seen.add(pair)
+            result.append({"color": pair[0], "size": pair[1]})
+    return result
+
+
+def is_product_variant_available(product: Product, color: str | None, size: str | None) -> bool:
+    if not product.in_stock:
+        return False
+    source = available_source_variants(product)
+    if source is not None:
+        return any(v["color"] == color and v["size"] == size for v in source)
+    return (color is None or color in product.colors) and (size is None or size in product.sizes) and not ((not product.colors) and color) and not ((not product.sizes) and size)
+
+
 def validate_setting(key: str, raw: str) -> str | None:
     """Normalized value for an admin-editable setting, or None if invalid."""
     value = raw.strip()
@@ -126,6 +158,9 @@ async def add_to_cart(
     size: str | None,
 ) -> int:
     """Adds one piece (merging same variant) and returns the new cart count."""
+    product = await session.get(Product, product_id)
+    if not product or not is_product_variant_available(product, color, size):
+        raise ValueError("Tanlangan rang va o'lcham mavjud emas")
     existing = await session.scalar(
         select(CartItem).where(
             CartItem.user_id == user_id,
@@ -188,7 +223,7 @@ async def create_order_from_cart(
 ) -> tuple[Order | None, int]:
     """Returns (order or None if nothing orderable, number of sold-out lines dropped)."""
     items = await get_cart(session, user_id)
-    available = [it for it in items if it.product.in_stock]
+    available = [it for it in items if is_product_variant_available(it.product, it.color, it.size)]
     if not available:
         return None, len(items)
     snapshot = cart_snapshot(available)
