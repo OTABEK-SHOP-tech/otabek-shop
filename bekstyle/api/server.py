@@ -77,13 +77,22 @@ async def lifespan(app: FastAPI):
             dp = get_dispatcher()
 
             async def poll():
-                try:
-                    logger.info("Starting Telegram bot polling loop...")
-                    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    logger.error("Bot polling error: %s", e)
+                retry_delay = 5
+                while True:
+                    try:
+                        logger.info("Starting Telegram bot polling loop...")
+                        await dp.start_polling(
+                            bot,
+                            allowed_updates=dp.resolve_used_update_types(),
+                            handle_signals=False,
+                        )
+                        break
+                    except asyncio.CancelledError:
+                        logger.info("Bot polling cancelled.")
+                        break
+                    except Exception as e:
+                        logger.error("Bot polling error: %s. Auto-reconnecting in %ss...", e, retry_delay)
+                        await asyncio.sleep(retry_delay)
 
             bot_task = asyncio.create_task(poll())
         except Exception as exc:
@@ -138,7 +147,13 @@ def create_app() -> FastAPI:
     @app.get("/health")
     @app.get("/api/health")
     async def health():
-        return {"status": "ok", "app": "BEK STYLE", "bot": "@bek_styleee_bot"}
+        bot_alive = bot_task is not None and not bot_task.done()
+        return {
+            "status": "ok",
+            "app": "BEK STYLE",
+            "bot": "@bek_styleee_bot",
+            "bot_running": bot_alive
+        }
 
     # Serve built React Mini App from webapp/dist
     webapp_dist = Path(__file__).resolve().parent.parent.parent / "webapp" / "dist"
