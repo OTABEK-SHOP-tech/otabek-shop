@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+gulmira_shop.db
+gulmira_shop.db-journal
+sakura_shop.db
+sakura_shop.db-journal
+*.db
+*.db-journal
+cache/
+media_cache/
+
+# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+
+# Executables
+cloudflared.exe
+*.exe
+
+# Env
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Tests / Coverage
+.pytest_cache/
+.coverage
+htmlcov/

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  gulmira-shop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gulmira_shop_app
+    restart: always
+    ports:
+      - "8001:8001"
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - OWNER_SETUP_CODE=${OWNER_SETUP_CODE}
+      - WEBAPP_URL=${WEBAPP_URL}
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/gulmira_shop.db
+      - DEV_ADMIN_ID=${DEV_ADMIN_ID}
+      - HOST=0.0.0.0
+      - PORT=8001
+      - MEDIA_CACHE_DIR=/app/media_cache
+    volumes:
+      - gulmira_data:/app/data
+      - gulmira_media:/app/media_cache
+
+volumes:
+  gulmira_data:
+    driver: local
+  gulmira_media:
+    driver: local
