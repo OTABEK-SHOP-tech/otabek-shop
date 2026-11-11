@@ -4,17 +4,105 @@ from datetime import datetime, timezone
 from pathlib import Path
 from aiogram import Router, F
 from aiogram.filters import CommandStart, CommandObject
-from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from sqlalchemy import select
 
 from api.config import settings
 from api.services.formatters import format_price, calculate_cargo
 from bot.keyboards.reply import get_main_reply_keyboard, make_webapp_inline_btn
+from bot.services.subscription import (
+    check_dual_subscription,
+    get_subscription_markup,
+    SUBSCRIBE_PROMPT_TEXT,
+    is_user_admin,
+    DEFAULT_CHANNEL_URL,
+    DEFAULT_CHAT_URL,
+)
 from db.models import User, Admin, Setting, Product, Review
 from db.session import async_session_factory
 
 router = Router(name="start")
 logger = logging.getLogger(__name__)
+
+
+async def send_welcome_greeting(target: Message, user_id: int):
+    """Sends the official Moonlight store banner, text and Mini App button."""
+    banner_path = Path(settings.MEDIA_CACHE_DIR) / "bot_banner.png"
+    channel_link = DEFAULT_CHANNEL_URL
+    chat_link = DEFAULT_CHAT_URL
+    contact_user = "+998939029799"
+
+    try:
+        async with async_session_factory() as session:
+            ch_s = await session.execute(select(Setting).where(Setting.key == "channel_url"))
+            ch_obj = ch_s.scalars().first()
+            if ch_obj and ch_obj.value:
+                channel_link = ch_obj.value
+
+            ct_chat = await session.execute(select(Setting).where(Setting.key == "chat_url"))
+            chat_obj = ct_chat.scalars().first()
+            if chat_obj and chat_obj.value:
+                chat_link = chat_obj.value
+
+            ct_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
+            ct_obj = ct_s.scalars().first()
+            if ct_obj and ct_obj.value:
+                contact_user = ct_obj.value.strip()
+    except Exception:
+        pass
+
+    contact_display = contact_user if (contact_user.startswith("+") or contact_user.isdigit()) else f"@{contact_user.lstrip('@')}"
+    contact_link = f"https://t.me/{contact_user}" if contact_user.startswith("+") else f"https://t.me/{contact_user.lstrip('@')}"
+
+    greeting_text = (
+        "🌙 <b>Moonlight Chinese Shop ga xush kelibsiz!</b> ✨\n\n"
+        "Xitoy brendlari va aesthetic kiyimlar, jempirlar, pariklar va nozik aksessuarlar do'koni 🛍️\n\n"
+        "🛍️ <b>Do'konni ochish</b> tugmasini bosib, barcha go'zal mahsulotlarni qulay Mini App orqali tomosha qiling va savatga qo'shing!\n\n"
+        "📍 Toshkent | 🚚 O'zbekiston bo'ylab yetkazib berish\n"
+        f"💌 Savollar va buyurtma uchun: {contact_display}"
+    )
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [make_webapp_inline_btn("🛍️ Do'konni ochish", settings.WEBAPP_URL)],
+            [
+                InlineKeyboardButton(text="📢 Rasmiy kanal", url=channel_link),
+                InlineKeyboardButton(text="💬 Rasmiy guruh", url=chat_link),
+            ],
+            [
+                InlineKeyboardButton(text="💌 Bog'lanish", url=contact_link),
+            ]
+        ]
+    )
+
+    if banner_path.is_file():
+        try:
+            await target.answer_photo(
+                photo=FSInputFile(str(banner_path)),
+                caption=greeting_text,
+                reply_markup=markup,
+            )
+            return
+        except Exception:
+            pass
+
+    await target.answer(greeting_text, reply_markup=get_main_reply_keyboard())
+
+
+async def _check_dual_sub_or_prompt(message: Message) -> bool:
+    """Returns True if user is subscribed to both channel and chat (or is admin). Sends prompt and returns False otherwise."""
+    user_id = message.from_user.id
+    async with async_session_factory() as session:
+        if await is_user_admin(session, user_id):
+            return True
+        is_ch, is_chat, ch_url, chat_url = await check_dual_subscription(message.bot, session, user_id)
+        if not (is_ch and is_chat):
+            await message.answer(
+                SUBSCRIBE_PROMPT_TEXT,
+                reply_markup=get_subscription_markup(ch_url, chat_url),
+            )
+            return False
+    return True
 
 
 @router.message(CommandStart())
@@ -61,6 +149,55 @@ async def handle_start(message: Message, command: CommandObject):
                 user_obj2.username = username
                 user_obj2.last_seen = now
                 await session.commit()
+
+    # 2. Check for OWNER CLAIM deep link: /start claim_<CODE> (Allowed without prior subscription)
+    if payload.startswith("claim_"):
+        from bot.services.ownership import claim_ownership
+
+        async with async_session_factory() as session:
+            result = await claim_ownership(session, payload[6:], user_id, full_name, username)
+
+        if result == "already_owner":
+            await message.answer(
+                "🌸 <b>Siz allaqachon do'kon egasisiz!</b>\n"
+                "Boshqaruv menyusini ochish uchun /admin buyrug'ini bosing.",
+                reply_markup=get_main_reply_keyboard(),
+            )
+            return
+
+        if result == "invalid":
+            await message.answer(
+                "❌ <b>Bu havola yaroqsiz yoki allaqachon ishlatilgan.</b>\n"
+                "Yangi havolani do'kon egasidan so'rang 🌸",
+                reply_markup=get_main_reply_keyboard(),
+            )
+            return
+
+        if result == "claimed":
+            owner_welcome = (
+                "🌙 <b>Bu do'kon endi sizniki / This shop is now yours</b> 🛍️\n\n"
+                "Tabriklaymiz! Siz <b>Moonlight Chinese Shop</b>ning rasmiy egasi etib tayinlandingiz.\n\n"
+                "✨ <b>Qisqa qo'llanma (3 ta qadam):</b>\n"
+                "1️⃣ <b>Yangi mahsulot:</b> /admin buyrug'ini bosing yoki Mini App ichidagi 👑 Admin tugmasidan foydalaning.\n"
+                "2️⃣ <b>Kanalni ulash:</b> Botni o'z kanalingizga admin qilib qo'shing — bot avtomatik aniqlaydi va tasdiqlashingiz bilan ulaydi.\n"
+                "3️⃣ <b>Buyurtmalar:</b> Mijozlar do'kondan buyurtma berishi bilan bu yerga chiroyli xabar bo'lib keladi.\n\n"
+                "Boshqaruv menyusini ochish uchun <b>/admin</b> buyrug'ini bosing! 💗"
+            )
+            await message.answer(owner_welcome, reply_markup=get_main_reply_keyboard())
+            return
+
+    # 3. MANDATORY SUBSCRIPTION CHECK (Channel + Chat)
+    # Check if user is an admin or subscribed to both channel and chat
+    if not payload.startswith("r_"):
+        async with async_session_factory() as session:
+            if not await is_user_admin(session, user_id):
+                is_ch, is_chat, ch_url, chat_url = await check_dual_subscription(message.bot, session, user_id)
+                if not (is_ch and is_chat):
+                    await message.answer(
+                        SUBSCRIBE_PROMPT_TEXT,
+                        reply_markup=get_subscription_markup(ch_url, chat_url),
+                    )
+                    return
 
     # Check for CONTEST direct link: /start konkurs
     if payload == "konkurs":
@@ -132,43 +269,7 @@ async def handle_start(message: Message, command: CommandObject):
                 )
                 return
 
-    # 2. Check for OWNER CLAIM deep link: /start claim_<CODE>
-    if payload.startswith("claim_"):
-        from bot.services.ownership import claim_ownership
-
-        async with async_session_factory() as session:
-            result = await claim_ownership(session, payload[6:], user_id, full_name, username)
-
-        if result == "already_owner":
-            await message.answer(
-                "🌸 <b>Siz allaqachon do'kon egasisiz!</b>\n"
-                "Boshqaruv menyusini ochish uchun /admin buyrug'ini bosing.",
-                reply_markup=get_main_reply_keyboard(),
-            )
-            return
-
-        if result == "invalid":
-            await message.answer(
-                "❌ <b>Bu havola yaroqsiz yoki allaqachon ishlatilgan.</b>\n"
-                "Yangi havolani do'kon egasidan so'rang 🌸",
-                reply_markup=get_main_reply_keyboard(),
-            )
-            return
-
-        if result == "claimed":
-            owner_welcome = (
-                "🌙 <b>Bu do'kon endi sizniki / This shop is now yours</b> 🛍️\n\n"
-                "Tabriklaymiz! Siz <b>Moonlight Chinese Shop</b>ning rasmiy egasi etib tayinlandingiz.\n\n"
-                "✨ <b>Qisqa qo'llanma (3 ta qadam):</b>\n"
-                "1️⃣ <b>Yangi mahsulot:</b> /admin buyrug'ini bosing yoki Mini App ichidagi 👑 Admin tugmasidan foydalaning.\n"
-                "2️⃣ <b>Kanalni ulash:</b> Botni o'z kanalingizga admin qilib qo'shing — bot avtomatik aniqlaydi va tasdiqlashingiz bilan ulaydi.\n"
-                "3️⃣ <b>Buyurtmalar:</b> Mijozlar do'kondan buyurtma berishi bilan bu yerga chiroyli xabar bo'lib keladi.\n\n"
-                "Boshqaruv menyusini ochish uchun <b>/admin</b> buyrug'ini bosing! 💗"
-            )
-            await message.answer(owner_welcome, reply_markup=get_main_reply_keyboard())
-            return
-
-    # 3. Check for PRODUCT deep link: /start product_<ID>
+    # 4. Check for PRODUCT deep link: /start product_<ID>
     if payload.startswith("product_"):
         try:
             prod_id = int(payload[8:])
@@ -237,63 +338,15 @@ async def handle_start(message: Message, command: CommandObject):
         except Exception as e:
             logger.warning(f"Error handling product deep link: {e}")
 
-    # 4. Standard welcome message
-    banner_path = Path(settings.MEDIA_CACHE_DIR) / "bot_banner.png"
-    channel_link = "https://t.me/moonlight_chinese_shop"
-    contact_user = "+998939029799"
-
-    try:
-        async with async_session_factory() as session:
-            ch_s = await session.execute(select(Setting).where(Setting.key == "channel_url"))
-            ch_obj = ch_s.scalars().first()
-            if ch_obj and ch_obj.value:
-                channel_link = ch_obj.value
-
-            ct_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
-            ct_obj = ct_s.scalars().first()
-            if ct_obj and ct_obj.value:
-                contact_user = ct_obj.value.strip()
-    except Exception:
-        pass
-
-    contact_display = contact_user if (contact_user.startswith("+") or contact_user.isdigit()) else f"@{contact_user.lstrip('@')}"
-    contact_link = f"https://t.me/{contact_user}" if contact_user.startswith("+") else f"https://t.me/{contact_user.lstrip('@')}"
-
-    greeting_text = (
-        "🌙 <b>Moonlight Chinese Shop ga xush kelibsiz!</b> ✨\n\n"
-        "Xitoy brendlari va aesthetic kiyimlar, jempirlar, pariklar va nozik aksessuarlar do'koni 🛍️\n\n"
-        "🛍️ <b>Do'konni ochish</b> tugmasini bosib, barcha go'zal mahsulotlarni qulay Mini App orqali tomosha qiling va savatga qo'shing!\n\n"
-        "📍 Toshkent | 🚚 O'zbekiston bo'ylab yetkazib berish\n"
-        f"💌 Savollar va buyurtma uchun: {contact_display}"
-    )
-
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [make_webapp_inline_btn("🛍️ Do'konni ochish", settings.WEBAPP_URL)],
-            [
-                InlineKeyboardButton(text="📢 Rasmiy kanal", url=channel_link),
-                InlineKeyboardButton(text="💌 Bog'lanish", url=contact_link),
-            ]
-        ]
-    )
-
-    if banner_path.is_file():
-        try:
-            await message.answer_photo(
-                photo=FSInputFile(str(banner_path)),
-                caption=greeting_text,
-                reply_markup=markup,
-            )
-            return
-        except Exception:
-            pass
-
-    await message.answer(greeting_text, reply_markup=get_main_reply_keyboard())
+    # 5. Standard welcome message
+    await send_welcome_greeting(message, user_id)
 
 
-# Fast reply button handlers
+# Fast reply button handlers — all require dual subscription
 @router.message(F.text == "🆕 Yangi mahsulotlar")
 async def handle_new_products(message: Message):
+    if not await _check_dual_sub_or_prompt(message):
+        return
     async with async_session_factory() as session:
         res = await session.execute(
             select(Product).where(Product.is_new == True, Product.in_stock == True).limit(5)
@@ -318,6 +371,8 @@ async def handle_new_products(message: Message):
 
 @router.message(F.text == "⭐ Fikrlar")
 async def handle_reviews(message: Message):
+    if not await _check_dual_sub_or_prompt(message):
+        return
     async with async_session_factory() as session:
         res = await session.execute(
             select(Review).where(Review.approved == True).order_by(Review.created_at.desc()).limit(3)
@@ -341,6 +396,8 @@ async def handle_reviews(message: Message):
 
 @router.message(F.text == "💌 Admin bilan bog'lanish")
 async def handle_contact(message: Message):
+    if not await _check_dual_sub_or_prompt(message):
+        return
     contact_val = "+998939029799"
     try:
         async with async_session_factory() as session:
@@ -364,21 +421,69 @@ async def handle_contact(message: Message):
 
 @router.message(F.text == "📢 Kanal")
 async def handle_channel_link(message: Message):
-    channel_link = "https://t.me/moonlight_chinese_shop"
+    if not await _check_dual_sub_or_prompt(message):
+        return
+    channel_link = DEFAULT_CHANNEL_URL
+    chat_link = DEFAULT_CHAT_URL
     try:
         async with async_session_factory() as session:
             ch_s = await session.execute(select(Setting).where(Setting.key == "channel_url"))
             ch_obj = ch_s.scalars().first()
             if ch_obj and ch_obj.value:
                 channel_link = ch_obj.value
+
+            ct_chat = await session.execute(select(Setting).where(Setting.key == "chat_url"))
+            chat_obj = ct_chat.scalars().first()
+            if chat_obj and chat_obj.value:
+                chat_link = chat_obj.value
     except Exception:
         pass
 
     await message.answer(
-        f"🌙 Bizning rasmiy Telegram kanalimizga a'zo bo'ling va yangi kolleksiyalarni birinchi bo'lib ko'ring!\n\n👉 {channel_link}",
+        f"🌙 Bizning rasmiy Telegram kanalimiz va guruhimizga a'zo bo'ling va yangi kolleksiyalarni birinchi bo'lib ko'ring!\n\n"
+        f"📢 <b>Kanal:</b> {channel_link}\n"
+        f"💬 <b>Guruh:</b> {chat_link}",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📢 Kanalga o'tish", url=channel_link)]
+                [InlineKeyboardButton(text="📢 Kanalga o'tish", url=channel_link)],
+                [InlineKeyboardButton(text="💬 Guruhga o'tish", url=chat_link)],
             ]
         ),
     )
+
+
+# --- FORCED DUAL SUBSCRIPTION: "Obuna bo'ldim" callback handler ---
+@router.callback_query(F.data == "check_subscription")
+async def handle_check_subscription(callback: CallbackQuery):
+    user_id = callback.from_user.id
+
+    async with async_session_factory() as session:
+        if await is_user_admin(session, user_id):
+            is_ch, is_chat = True, True
+            ch_url, chat_url = DEFAULT_CHANNEL_URL, DEFAULT_CHAT_URL
+        else:
+            is_ch, is_chat, ch_url, chat_url = await check_dual_subscription(callback.bot, session, user_id)
+
+    if is_ch and is_chat:
+        await callback.answer("✅ Rahmat! Obuna muvaffaqiyatli tasdiqlandi!", show_alert=False)
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+
+        await send_welcome_greeting(callback.message, user_id)
+    elif not is_ch and not is_chat:
+        await callback.answer(
+            "❌ Siz hali kanal va guruhimizga a'zo bo'lmadingiz!\nIltimos, ikkalasiga ham a'zo bo'ling.",
+            show_alert=True,
+        )
+    elif not is_ch:
+        await callback.answer(
+            "⚠️ Siz kanalimizga hali a'zo bo'lmadingiz!\nIltimos, kanalga a'zo bo'ling.",
+            show_alert=True,
+        )
+    else:
+        await callback.answer(
+            "⚠️ Siz guruhimizga hali a'zo bo'lmadingiz!\nIltimos, guruhga ham qo'shiling.",
+            show_alert=True,
+        )

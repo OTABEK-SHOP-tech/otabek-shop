@@ -45,7 +45,9 @@ async def seed_database() -> None:
                 Setting(key="location", value="Toshkent"),
                 Setting(key="contact_username", value="+998939029799"),
                 Setting(key="channel_url", value="https://t.me/moonlight_chinese_shop"),
-                Setting(key="channel_id", value=""),
+                Setting(key="channel_id", value="-1004378811161"),
+                Setting(key="chat_url", value="https://t.me/MY_interesno"),
+                Setting(key="chat_id", value="-1003565030513"),
                 Setting(key="owner_claimed_at", value=""),
                 Setting(key="welcome_text", value="Moonlight Chinese Shop ga xush kelibsiz! 🌙 Xitoy brendlari va aesthetic kiyimlar do'koni."),
             ]
