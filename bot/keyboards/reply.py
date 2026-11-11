@@ -46,10 +46,21 @@ def get_main_reply_keyboard(webapp_url: str = settings.WEBAPP_URL) -> ReplyKeybo
 
 
 def make_webapp_inline_btn(text: str, url: str) -> InlineKeyboardButton:
-    """Creates an inline button, using WebAppInfo if https, or url fallback if http."""
+    """Creates an inline button with Telegram Premium animated icon and primary style."""
+    clean_text = text.replace("🛍️", "").replace("🛍", "").strip()
     if url and url.startswith("https://"):
-        return InlineKeyboardButton(text=text, web_app=WebAppInfo(url=url))
-    return InlineKeyboardButton(text=text, url=url or "http://localhost:8001")
+        return InlineKeyboardButton(
+            text=clean_text or text,
+            web_app=WebAppInfo(url=url),
+            icon_custom_emoji_id="5373052667671093676",
+            style="primary",
+        )
+    return InlineKeyboardButton(
+        text=clean_text or text,
+        url=url or "http://localhost:8001",
+        icon_custom_emoji_id="5373052667671093676",
+        style="primary",
+    )
 
 
 def get_admin_main_keyboard() -> InlineKeyboardMarkup:

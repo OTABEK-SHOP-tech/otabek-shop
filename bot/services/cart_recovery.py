@@ -7,6 +7,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from sqlalchemy import select, and_
 
 from api.config import settings
+from bot.services.premium_emojis import upgrade_to_premium_emojis, make_premium_button
 from db.models import User, CartItem, Product
 from db.session import async_session_factory
 
@@ -52,7 +53,7 @@ async def recover_abandoned_carts(bot_instance: Bot) -> int:
                     continue
 
                 display_name = user.name or "go'zal"
-                reminder_text = (
+                raw_text = (
                     f"🌸 <b>Salom, {escape(display_name)}!</b> ✨\n\n"
                     f"Siz <b>Moonlight Chinese Shop</b> savatingizda ajoyib kiyimlarni unutib qoldirdingiz... 🛍️\n"
                     f"Tanlagan {len(items)} ta go'zal buyumingiz sizni kutmoqda!\n\n"
@@ -60,13 +61,14 @@ async def recover_abandoned_carts(bot_instance: Bot) -> int:
                     f"🏷 Promokod: <code>MOON10</code>\n\n"
                     f"Hoziroq savatingizga qaytib, buyurtmani 10% arzonroq rasmiylashtiring! 🌙"
                 )
+                reminder_text = upgrade_to_premium_emojis(raw_text)
 
                 webapp_url = f"{settings.WEBAPP_URL}?tab=bag&promo=MOON10"
                 keyboard = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [
-                            InlineKeyboardButton(
-                                text="🛍️ Savatga qaytish (10% Chegirma)",
+                            make_premium_button(
+                                text="Savatga qaytish (10% Chegirma)",
                                 web_app=WebAppInfo(url=webapp_url)
                             )
                         ]

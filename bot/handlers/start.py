@@ -10,6 +10,7 @@ from sqlalchemy import select
 from api.config import settings
 from api.services.formatters import format_price, calculate_cargo
 from bot.keyboards.reply import get_main_reply_keyboard, make_webapp_inline_btn
+from bot.services.premium_emojis import upgrade_to_premium_emojis
 from bot.services.subscription import (
     check_dual_subscription,
     get_subscription_markup,
@@ -54,13 +55,14 @@ async def send_welcome_greeting(target: Message, user_id: int):
     contact_display = contact_user if (contact_user.startswith("+") or contact_user.isdigit()) else f"@{contact_user.lstrip('@')}"
     contact_link = f"https://t.me/{contact_user}" if contact_user.startswith("+") else f"https://t.me/{contact_user.lstrip('@')}"
 
-    greeting_text = (
+    raw_greeting_text = (
         "🌙 <b>Moonlight Chinese Shop ga xush kelibsiz!</b> ✨\n\n"
         "Xitoy brendlari va aesthetic kiyimlar, jempirlar, pariklar va nozik aksessuarlar do'koni 🛍️\n\n"
         "🛍️ <b>Do'konni ochish</b> tugmasini bosib, barcha go'zal mahsulotlarni qulay Mini App orqali tomosha qiling va savatga qo'shing!\n\n"
         "📍 Toshkent | 🚚 O'zbekiston bo'ylab yetkazib berish\n"
         f"💌 Savollar va buyurtma uchun: {contact_display}"
     )
+    greeting_text = upgrade_to_premium_emojis(raw_greeting_text)
 
     markup = InlineKeyboardMarkup(
         inline_keyboard=[

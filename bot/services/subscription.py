@@ -17,6 +17,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.services.premium_emojis import upgrade_to_premium_emojis, make_premium_button
 from db.models import Admin, Setting
 
 logger = logging.getLogger(__name__)
@@ -118,17 +119,24 @@ async def check_dual_subscription(
 
 
 def get_subscription_markup(channel_url: str, chat_url: str) -> InlineKeyboardMarkup:
-    """Builds inline keyboard prompting user to join both channel and chat."""
+    """Builds inline keyboard prompting user to join both channel and chat with premium verify button."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📢 1. Rasmiy kanalga a'zo bo'lish", url=channel_url)],
             [InlineKeyboardButton(text="💬 2. Rasmiy guruhga qo'shilish", url=chat_url)],
-            [InlineKeyboardButton(text="✅ A'zo bo'ldim (Obunani tekshirish)", callback_data="check_subscription")],
+            [
+                InlineKeyboardButton(
+                    text="A'zo bo'ldim (Obunani tekshirish)",
+                    callback_data="check_subscription",
+                    icon_custom_emoji_id="5429351167706547656",
+                    style="success",
+                )
+            ],
         ]
     )
 
 
-SUBSCRIBE_PROMPT_TEXT = (
+SUBSCRIBE_PROMPT_TEXT = upgrade_to_premium_emojis(
     "🌙 <b>Moonlight Chinese Shop ga xush kelibsiz!</b> ✨\n\n"
     "Botdan to'liq foydalanish va nozik mahsulotlarimizni Mini App orqali xarid qilish uchun "
     "rasmiy kanalimiz va muloqot guruhimizga a'zo bo'ling:\n\n"

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from api.config import settings
 from api.services.formatters import build_channel_caption
 from bot.loader import bot
+from bot.services.premium_emojis import upgrade_to_premium_emojis, make_premium_button, fallback_button
 from db.models import Product, Setting
 from db.session import async_session_factory
 
@@ -35,7 +36,7 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
         delivery_scope = settings_map.get("delivery_scope", "O'zbekiston bo'ylab")
         contact_username = settings_map.get("contact_username", "+998939029799")
 
-        caption = build_channel_caption(
+        raw_caption = build_channel_caption(
             category_slug=product.category,
             price=product.price,
             cargo_rate=cargo_rate,
@@ -44,6 +45,7 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
             contact_username=contact_username,
             title=product.title,
         )
+        caption = upgrade_to_premium_emojis(raw_caption)
 
         # Get bot username for deep link
         bot_info = await bot.get_me()
@@ -53,8 +55,8 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
         reply_markup = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(
-                        text="🛍️ Do'konda ko'rish",
+                    make_premium_button(
+                        text="Do'konda ko'rish",
                         url=product_webapp_url,
                     )
                 ]
