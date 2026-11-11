@@ -114,7 +114,8 @@ class Order(Base):
     items_snapshot = Column(JSON, nullable=False)  # [{product_id, title, price, size, color, qty, photo}]
     total = Column(Integer, nullable=False)
     estimated_cargo = Column(Integer, nullable=False, default=0)
-    status = Column(String(50), default="new", nullable=False)  # new, accepted, cancelled
+    status = Column(String(50), default="awaiting_receipt", nullable=False)  # awaiting_receipt, pending_approval, accepted, cancelled, new
+    receipt_photo_id = Column(String(255), nullable=True)
     promo_code = Column(String(50), nullable=True)
     discount_amount = Column(Integer, default=0, nullable=False)
     cashback_used = Column(Integer, default=0, nullable=False)

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Trash2, Plus, Minus, Send, Copy, Check, ShoppingBag, ArrowRight, Truck, Coins, Sparkles, ShieldCheck } from 'lucide-react';
+import { Trash2, Plus, Minus, Send, Copy, Check, ShoppingBag, ArrowRight, Truck, Coins, Sparkles, ShieldCheck, Camera, CreditCard } from 'lucide-react';
 import { CartSummary, Order, ShopSettings, UserCashback } from '../types';
 import { formatPrice, getMediaUrl } from '../utils/format';
 import { getTelegramWebApp, haptic, openTelegramLink, playBoutiqueSound } from '../utils/telegram';
@@ -180,6 +180,8 @@ export const BagPage: React.FC<BagPageProps> = ({
       ? stages.findIndex((s) => s.key === completedOrder.cargo_stage)
       : 0;
 
+    const paymentCardNumber = settings.payment_card || '9860 0301 0204 8413 (Gulmira M.)';
+
     return (
       <div className="p-4 pb-28 max-w-md mx-auto text-center animate-scale-in">
         <div className="w-20 h-20 mx-auto my-3 rounded-full bg-sakura-blush dark:bg-sakura-darkcardsoft flex items-center justify-center text-4xl shadow-sakura">
@@ -189,8 +191,69 @@ export const BagPage: React.FC<BagPageProps> = ({
           {t.orderSuccessTitle}
         </h2>
         <p className="text-xs text-sakura-plum/80 dark:text-sakura-blush/80 mt-1.5 px-4">
-          {t.orderSuccessSubtitle}
+          Buyurtmangiz (#{completedOrder.id}) muvaffaqiyatli saqlandi!
         </p>
+
+        {/* Prominent Payment Receipt Callout (#Critical) */}
+        <div className="mt-4 p-4 rounded-3xl bg-gradient-to-br from-rose-50 via-pink-50 to-amber-50 dark:from-rose-950/40 dark:via-pink-950/40 dark:to-amber-950/30 border-2 border-sakura-rose/50 shadow-sakura text-left">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="p-2 rounded-2xl bg-sakura-rose text-white shadow-xs">
+              <Camera className="w-4 h-4" />
+            </span>
+            <div>
+              <h3 className="text-sm font-black text-sakura-darkrose dark:text-sakura-pink">
+                To'lov chekini botga yuboring! 📸
+              </h3>
+              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-900/40 px-2 py-0.5 rounded-full inline-block mt-0.5">
+                ⏳ Chek kutilmoqda
+              </span>
+            </div>
+          </div>
+
+          <p className="text-xs text-sakura-plum/90 dark:text-sakura-blush/90 leading-relaxed mt-2">
+            Iltimos, to'lovni amalga oshirgach, to'lov cheki (skrinshot)ni bot chatiga yuboring. <b>Chek yuborilmaguncha buyurtmangiz adminlarga bormaydi.</b>
+          </p>
+
+          <div className="mt-3 p-3 rounded-2xl bg-white/90 dark:bg-sakura-darkcard/90 border border-sakura-pink/30 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-sakura-plum/70 dark:text-sakura-blush/70 flex items-center gap-1">
+                <CreditCard className="w-3.5 h-3.5 text-sakura-rose" />
+                <span>Karta rekvizitlari:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopyCodeBlock(paymentCardNumber)}
+                className="font-mono font-bold text-sakura-plum dark:text-white select-all flex items-center gap-1 hover:text-sakura-rose transition-colors py-0.5 px-1.5 rounded-lg active:scale-95"
+                title="Nusxalash uchun bosing"
+              >
+                <span>{paymentCardNumber}</span>
+                <Copy className="w-3 h-3 text-sakura-rose inline" />
+              </button>
+            </div>
+            <div className="flex items-center justify-between text-xs pt-1 border-t border-sakura-pink/20">
+              <span className="text-sakura-plum/70 dark:text-sakura-blush/70">To'lov summasi:</span>
+              <span className="font-black text-sakura-rose dark:text-sakura-pink">
+                {formatPrice(completedOrder.total)}
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              const tg = getTelegramWebApp();
+              haptic.notification('success');
+              if (tg?.close) {
+                tg.close();
+              } else {
+                openTelegramLink('https://t.me/moonlight_chinese_bot');
+              }
+            }}
+            className="w-full mt-3 py-3 px-4 rounded-2xl bg-gradient-to-r from-sakura-rose to-sakura-darkrose text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sakura active:scale-95 transition-transform"
+          >
+            <Camera className="w-4 h-4" />
+            <span>📸 Botga qaytish va chekni yuborish</span>
+          </button>
+        </div>
 
         {/* 5-Stage Live Cargo Radar (#26) */}
         <div className="mt-4 p-4 rounded-3xl bg-white/90 dark:bg-sakura-darkcard/90 backdrop-blur-md border border-sakura-pink/30 shadow-sakura-sm text-left">
@@ -252,7 +315,7 @@ export const BagPage: React.FC<BagPageProps> = ({
           </pre>
         </div>
 
-        {/* Message Admin Button */}
+        {/* Secondary Buttons */}
         <div className="mt-4 flex flex-col gap-2.5">
           <button
             onClick={() => {
@@ -260,9 +323,9 @@ export const BagPage: React.FC<BagPageProps> = ({
               const url = `${contactLink}${sep}text=${encodeURIComponent(copyableSummary)}`;
               openTelegramLink(url);
             }}
-            className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-sakura-rose to-sakura-darkrose text-white font-black text-sm flex items-center justify-center gap-2 shadow-sakura active:scale-95 transition-transform"
+            className="w-full py-3 px-4 rounded-2xl bg-white/90 dark:bg-sakura-darkcard/90 text-sakura-plum dark:text-white font-bold text-xs flex items-center justify-center gap-2 border border-sakura-pink/30 active:scale-95 transition-transform"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-4 h-4 text-sakura-rose" />
             <span>{t.messageAdminButton}</span>
           </button>
 

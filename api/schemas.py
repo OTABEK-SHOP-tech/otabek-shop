@@ -122,7 +122,8 @@ class OrderOut(BaseModel):
     formatted_total: str = ""
     estimated_cargo: int
     formatted_cargo: str = ""
-    status: str  # new, accepted, cancelled
+    status: str  # awaiting_receipt, pending_approval, accepted, cancelled, new
+    receipt_photo_id: Optional[str] = None
     cashback_used: int = 0
     formatted_cashback_used: str = ""
     cargo_stage: str = "china_warehouse"
@@ -142,7 +143,7 @@ class UserMeOut(BaseModel):
 
 
 class OrderStatusUpdate(BaseModel):
-    status: str = Field(..., pattern="^(new|accepted|cancelled)$")
+    status: str = Field(..., pattern="^(new|awaiting_receipt|pending_approval|accepted|cancelled)$")
 
 
 # ==================== WISHLIST SCHEMAS ====================

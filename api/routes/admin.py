@@ -246,6 +246,7 @@ async def admin_list_orders(
             estimated_cargo=o.estimated_cargo,
             formatted_cargo=format_price(o.estimated_cargo),
             status=o.status,
+            receipt_photo_id=o.receipt_photo_id,
             created_at=o.created_at,
         )
         for o in orders
@@ -264,24 +265,146 @@ async def admin_update_order_status(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Buyurtma topilmadi")
 
+    old_status = order.status
     order.status = payload.status
-    await db.commit()
-    await db.refresh(order)
 
-    # Notify customer via Telegram if status changed
-    if bot and order.user_id:
-        status_text = "qabul qilindi ✅" if payload.status == "accepted" else "bekor qilindi ❌"
-        res_contact = await db.execute(select(Setting).where(Setting.key == "contact_username"))
-        contact_s = res_contact.scalars().first()
-        raw_c = contact_s.value if contact_s and contact_s.value else "MOONLIGHT_ADMINNN"
-        contact_display = raw_c if (raw_c.startswith("+") or raw_c.isdigit()) else f"@{raw_c.lstrip('@')}"
-        try:
-            await bot.send_message(
-                chat_id=order.user_id,
-                text=f"🌙 <b>Buyurtmangiz (#{order.id}) holati o'zgardi:</b>\nHolat: <b>{status_text}</b>\n\nSavollaringiz bo'lsa {contact_display} ga yozishingiz mumkin 💌",
-            )
-        except Exception as e:
-            logger.warning(f"Could not notify user {order.user_id} of order status: {e}")
+    earned_cashback = 0
+    new_balance = 0
+
+    if payload.status == "accepted" and old_status != "accepted":
+        # Award 2% cashback to customer
+        earned_cashback = int(order.total * 0.02)
+        res_u = await db.execute(select(User).where(User.telegram_id == order.user_id))
+        u_obj = res_u.scalars().first()
+        if u_obj:
+            u_obj.cashback_balance += earned_cashback
+            new_balance = u_obj.cashback_balance
+
+        await db.commit()
+        await db.refresh(order)
+
+        # Broadcast live purchase proof receipt to @moonlight_shop_otzv
+        if bot:
+            try:
+                from bot.services.order_notifier import broadcast_live_order_proof
+                await broadcast_live_order_proof(bot, order)
+            except Exception as e:
+                logger.warning(f"Failed to broadcast live order proof: {e}")
+
+        # Notify customer with acceptance, cashback, and contact button
+        if bot and order.user_id:
+            try:
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                from bot.services.premium_emojis import upgrade_to_premium_emojis, PREMIUM_BTN_STAR_ID
+                res_contact = await db.execute(select(Setting).where(Setting.key == "contact_username"))
+                contact_s = res_contact.scalars().first()
+                contact_user = contact_s.value.lstrip("@") if contact_s and contact_s.value else "MOONLIGHT_ADMINNN"
+                clean_contact = contact_user.replace("@", "")
+
+                cashback_info = (
+                    f"\n\n💰 <b>Keshbek:</b> Ushbu xaridingiz uchun hisobingizga <b>+{format_price(earned_cashback)}</b> qo'shildi!\n"
+                    f"Jami balansingiz: <b>{format_price(new_balance)}</b> (keyingi buyurtmada 20% gacha chegirma qilib ishlatishingiz mumkin) ✨"
+                )
+                customer_markup = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="💌 Moonlight Shop Adminga bog'lanish",
+                                url=f"https://t.me/{clean_contact}",
+                                icon_custom_emoji_id=PREMIUM_BTN_STAR_ID,
+                                style="primary",
+                            )
+                        ]
+                    ]
+                )
+                msg_text = (
+                    f"🌙 <b>Buyurtmangiz (#{order.id}) qabul qilindi va to'lovingiz tasdiqlandi!</b> ✅\n\n"
+                    f"To'lovingiz muvaffaqiyatli qabul qilindi. Mahsulotlaringiz tez orada Xitoy omboridan jo'natilishga tayyorlanadi 🌸"
+                    f"{cashback_info}\n\n"
+                    f"Savollaringiz bo'lsa Moonlight Shop adminga bog'lanishingiz mumkin 💌"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=order.user_id,
+                        text=upgrade_to_premium_emojis(msg_text),
+                        reply_markup=customer_markup,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    fallback_markup = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="💌 Moonlight Shop Adminga bog'lanish", url=f"https://t.me/{clean_contact}")]
+                        ]
+                    )
+                    await bot.send_message(
+                        chat_id=order.user_id,
+                        text=msg_text,
+                        reply_markup=fallback_markup,
+                        parse_mode="HTML",
+                    )
+            except Exception as e:
+                logger.warning(f"Could not notify customer {order.user_id}: {e}")
+
+    elif payload.status == "cancelled" and old_status != "cancelled":
+        # Refund used cashback if applicable
+        if order.cashback_used and order.cashback_used > 0:
+            res_u = await db.execute(select(User).where(User.telegram_id == order.user_id))
+            u_obj = res_u.scalars().first()
+            if u_obj:
+                u_obj.cashback_balance += order.cashback_used
+
+        await db.commit()
+        await db.refresh(order)
+
+        if bot and order.user_id:
+            try:
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                from bot.services.premium_emojis import upgrade_to_premium_emojis
+                res_contact = await db.execute(select(Setting).where(Setting.key == "contact_username"))
+                contact_s = res_contact.scalars().first()
+                contact_user = contact_s.value.lstrip("@") if contact_s and contact_s.value else "MOONLIGHT_ADMINNN"
+                clean_contact = contact_user.replace("@", "")
+
+                cancel_markup = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="💌 Moonlight Shop Adminga bog'lanish",
+                                url=f"https://t.me/{clean_contact}",
+                                style="danger",
+                            )
+                        ]
+                    ]
+                )
+                cancel_text = (
+                    f"🌙 <b>Buyurtmangiz (#{order.id}) to'lovi tasdiqlanmadi va bekor qilindi.</b> ❌\n\n"
+                    f"Iltimos, to'lov cheki yoki ma'lumotlarni aniqlashtirish uchun Moonlight Shop admini bilan bog'laning 💌"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=order.user_id,
+                        text=upgrade_to_premium_emojis(cancel_text),
+                        reply_markup=cancel_markup,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    fallback_cancel_markup = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="💌 Moonlight Shop Adminga bog'lanish", url=f"https://t.me/{clean_contact}")]
+                        ]
+                    )
+                    await bot.send_message(
+                        chat_id=order.user_id,
+                        text=cancel_text,
+                        reply_markup=fallback_cancel_markup,
+                        parse_mode="HTML",
+                    )
+            except Exception as e:
+                logger.warning(f"Could not notify customer {order.user_id}: {e}")
+
+    else:
+        await db.commit()
+        await db.refresh(order)
 
     return OrderOut(
         id=order.id,
@@ -294,6 +417,7 @@ async def admin_update_order_status(
         estimated_cargo=order.estimated_cargo,
         formatted_cargo=format_price(order.estimated_cargo),
         status=order.status,
+        receipt_photo_id=order.receipt_photo_id,
         created_at=order.created_at,
     )
 
@@ -360,7 +484,13 @@ async def admin_get_stats(
 
     # Orders counts
     total_orders = (await db.execute(select(func.count(Order.id)))).scalar() or 0
-    new_orders = (await db.execute(select(func.count(Order.id)).where(Order.status == "new"))).scalar() or 0
+    new_orders = (
+        await db.execute(
+            select(func.count(Order.id)).where(
+                Order.status.in_(["new", "awaiting_receipt", "pending_approval"])
+            )
+        )
+    ).scalar() or 0
     accepted_orders = (await db.execute(select(func.count(Order.id)).where(Order.status == "accepted"))).scalar() or 0
 
     # Products counts

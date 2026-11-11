@@ -746,7 +746,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
               : 'text-sakura-plum/70 dark:text-sakura-blush/70'
           }`}
         >
-          Buyurtmalar ({orders.filter((o) => o.status === 'new').length})
+          Buyurtmalar ({orders.filter((o) => ['new', 'awaiting_receipt', 'pending_approval'].includes(o.status)).length})
         </button>
         <button
           onClick={() => setActiveAdminSubTab('contest')}
@@ -1046,17 +1046,34 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                       Mijoz: {o.customer_name} ({o.customer_username ? `@${o.customer_username}` : 'No username'})
                     </span>
                   </div>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                      o.status === 'accepted'
-                        ? 'bg-emerald-100 text-emerald-700'
+                  <div className="flex flex-col items-end gap-1">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                        o.status === 'accepted'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                          : o.status === 'cancelled'
+                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                          : o.status === 'pending_approval'
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 animate-pulse'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 animate-pulse'
+                      }`}
+                    >
+                      {o.status === 'pending_approval'
+                        ? 'Chek tekshirilmoqda ⏳'
+                        : o.status === 'awaiting_receipt'
+                        ? 'Chek kutilmoqda 📸'
+                        : o.status === 'accepted'
+                        ? 'Qabul qilindi ✅'
                         : o.status === 'cancelled'
-                        ? 'bg-rose-100 text-rose-700'
-                        : 'bg-amber-100 text-amber-700 animate-pulse'
-                    }`}
-                  >
-                    {o.status}
-                  </span>
+                        ? 'Bekor qilindi ❌'
+                        : o.status}
+                    </span>
+                    {o.receipt_photo_id && (
+                      <span className="text-[9px] font-bold text-sakura-rose bg-sakura-blush/60 px-2 py-0.5 rounded-full">
+                        📸 Chek yuklangan
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="text-xs space-y-1 py-1.5 border-y border-sakura-pink/20 my-2">
@@ -1082,17 +1099,17 @@ export const AdminPage: React.FC<AdminPageProps> = ({
                     )}
                   </div>
 
-                  {o.status === 'new' && (
+                  {['new', 'pending_approval', 'awaiting_receipt'].includes(o.status) && (
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleUpdateOrderStatus(o.id, 'accepted')}
-                        className="px-3 py-1 rounded-xl bg-emerald-500 text-white font-bold text-xs shadow-xs"
+                        className="px-3 py-1 rounded-xl bg-emerald-500 text-white font-bold text-xs shadow-xs hover:bg-emerald-600 transition-colors"
                       >
                         Qabul ✅
                       </button>
                       <button
                         onClick={() => handleUpdateOrderStatus(o.id, 'cancelled')}
-                        className="px-3 py-1 rounded-xl bg-rose-500 text-white font-bold text-xs shadow-xs"
+                        className="px-3 py-1 rounded-xl bg-rose-500 text-white font-bold text-xs shadow-xs hover:bg-rose-600 transition-colors"
                       >
                         Bekor ❌
                       </button>

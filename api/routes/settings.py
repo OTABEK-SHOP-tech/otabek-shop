@@ -20,6 +20,7 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         "delivery_days": data.get("delivery_days", "10–15 kun"),
         "delivery_scope": data.get("delivery_scope", "O'zbekiston bo'ylab"),
         "payment_terms": data.get("payment_terms", "100% oldindan to'lov"),
+        "payment_card": data.get("payment_card", "9860 0301 0204 8413 (Gulmira M.)"),
         "location": data.get("location", "Toshkent"),
         "contact_username": data.get("contact_username", "MOONLIGHT_ADMINNN"),
         "channel_url": data.get("channel_url", "https://t.me/moonlight_chinese_shop"),

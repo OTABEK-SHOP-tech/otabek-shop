@@ -69,6 +69,8 @@ def _add_missing_columns(sync_conn) -> None:
             sync_conn.execute(text("ALTER TABLE orders ADD COLUMN cashback_used INTEGER DEFAULT 0 NOT NULL"))
         if "cargo_stage" not in existing_orders:
             sync_conn.execute(text("ALTER TABLE orders ADD COLUMN cargo_stage VARCHAR(50) DEFAULT 'china_warehouse' NOT NULL"))
+        if "receipt_photo_id" not in existing_orders:
+            sync_conn.execute(text("ALTER TABLE orders ADD COLUMN receipt_photo_id VARCHAR(255) NULL"))
 
 
 async def init_db() -> None:

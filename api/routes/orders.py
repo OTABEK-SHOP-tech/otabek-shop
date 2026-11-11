@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import get_current_user, TelegramUser
 from api.schemas import OrderCreate, OrderOut, UserMeOut
 from api.services.formatters import format_price, calculate_cargo, format_cargo_stage
-from bot.services.order_notifier import notify_new_order
+from bot.services.order_notifier import send_payment_instructions
 from db.models import Order, CartItem, Product, Setting, User
 from db.session import get_db
 
@@ -112,7 +112,8 @@ async def create_order(
         items_snapshot=items_snapshot,
         total=total,
         estimated_cargo=estimated_cargo,
-        status="new",
+        status="awaiting_receipt",
+        receipt_photo_id=None,
         cashback_used=applied_cashback,
         cargo_stage="china_warehouse",
     )
@@ -124,9 +125,9 @@ async def create_order(
     await db.commit()
     await db.refresh(new_order)
 
-    # Trigger background Telegram notification
+    # Trigger background Telegram notification (payment instructions to customer only)
     background_tasks.add_task(
-        notify_new_order,
+        send_payment_instructions,
         order_id=new_order.id,
         user_id=user.id,
         customer_name=customer_name,
@@ -147,6 +148,7 @@ async def create_order(
         estimated_cargo=new_order.estimated_cargo,
         formatted_cargo=format_price(new_order.estimated_cargo),
         status=new_order.status,
+        receipt_photo_id=new_order.receipt_photo_id,
         cashback_used=new_order.cashback_used,
         formatted_cashback_used=format_price(new_order.cashback_used),
         cargo_stage=new_order.cargo_stage,
@@ -176,6 +178,7 @@ async def list_user_orders(
             estimated_cargo=o.estimated_cargo,
             formatted_cargo=format_price(o.estimated_cargo),
             status=o.status,
+            receipt_photo_id=o.receipt_photo_id,
             cashback_used=o.cashback_used,
             formatted_cashback_used=format_price(o.cashback_used),
             cargo_stage=o.cargo_stage,

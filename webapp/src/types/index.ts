@@ -67,7 +67,8 @@ export interface Order {
   formatted_cashback_used?: string;
   cargo_stage?: string;
   formatted_cargo_stage?: string;
-  status: 'new' | 'accepted' | 'cancelled';
+  status: 'new' | 'awaiting_receipt' | 'pending_approval' | 'accepted' | 'cancelled';
+  receipt_photo_id?: string | null;
   created_at: string;
 }
 
@@ -91,6 +92,7 @@ export interface ShopSettings {
   delivery_days: string;
   delivery_scope: string;
   payment_terms: string;
+  payment_card?: string;
   location: string;
   contact_username: string;
   channel_url: string;
