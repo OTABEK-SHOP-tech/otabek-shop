@@ -28,7 +28,7 @@ async def notify_new_order(
         # Get contact username
         res_contact = await session.execute(select(Setting).where(Setting.key == "contact_username"))
         contact_setting = res_contact.scalars().first()
-        contact_username = contact_setting.value if contact_setting else "fkhrdnvvvva"
+        contact_username = contact_setting.value if contact_setting and contact_setting.value else "+998939029799"
 
         # Get all admins
         res_admins = await session.execute(select(Admin))

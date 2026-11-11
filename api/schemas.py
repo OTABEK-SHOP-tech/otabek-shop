@@ -167,7 +167,7 @@ class SettingsDict(BaseModel):
     contact_username: str = "fkhrdnvvvva"
     channel_url: str = "https://t.me/sakuraaa_chinese_shop"
     channel_id: str = ""
-    welcome_text: str = "Gulmira Shop ga xush kelibsiz! 🌸"
+    welcome_text: str = "Moonlight Chinese Shop ga xush kelibsiz! 🌸"
 
 
 # ==================== STATS SCHEMAS ====================

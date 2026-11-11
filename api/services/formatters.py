@@ -36,7 +36,7 @@ def build_channel_caption(
     cargo_rate: int = 12000,
     delivery_days: str = "10–15 kun",
     delivery_scope: str = "O'zbekiston bo'ylab",
-    contact_username: str = "fkhrdnvvvva",
+    contact_username: str = "+998939029799",
     title: Optional[str] = None,
 ) -> str:
     """
@@ -46,7 +46,7 @@ def build_channel_caption(
     📦 Kargo: 12.000 so'm / 100g
     ⏳ 10–15 kun
     🚚 Dastavka: O'zbekiston bo'ylab
-    Buyurtma berish uchun @fkhrdnvvvva ga yozing 💌
+    Buyurtma berish uchun +998939029799 ga yozing 💌
     """
     clean_cat = category_slug.replace("#", "").strip()
     tag_line = f"#{clean_cat} 🌸"
@@ -55,13 +55,15 @@ def build_channel_caption(
     else:
         header_line = tag_line
 
+    contact_display = contact_username if (contact_username.startswith("+") or contact_username.isdigit()) else f"@{contact_username.lstrip('@')}"
+
     lines = [
         header_line,
         f"💰 Narxi: {format_price(price)}",
         f"📦 Kargo: {format_price(cargo_rate)} / 100g",
         f"⏳ {delivery_days}",
         f"🚚 Dastavka: {delivery_scope}",
-        f"Buyurtma berish uchun @{contact_username.replace('@', '')} ga yozing 💌",
+        f"Buyurtma berish uchun {contact_display} ga yozing 💌",
     ]
     return "\n".join(lines)
 
@@ -119,7 +121,7 @@ def build_order_summary(
     items: List[Dict[str, Any]],
     total: int,
     estimated_cargo: int = 0,
-    contact_username: str = "fkhrdnvvvva",
+    contact_username: str = "+998939029799",
 ) -> Dict[str, str]:
     """
     Build neat order summary for admin and customer.
@@ -165,12 +167,14 @@ def build_order_summary(
     )
 
     copyable_block = (
-        f"🌸 Gulmira Shop — Buyurtma #{order_id}\n"
+        f"🌙 Moonlight Chinese Shop — Buyurtma #{order_id}\n"
         f"Mijoz: {customer_name} ({username_display})\n\n"
         f"{copyable_items_block}\n\n"
         f"Jami: {format_price(total)}\n"
         f"{copy_cargo_text}"
     )
+
+    contact_display = contact_username if (contact_username.startswith("+") or contact_username.isdigit()) else f"@{contact_username.lstrip('@')}"
 
     customer_text = (
         f"🌸 <b>Rahmat, {escape(customer_name)}!</b> 💗\n\n"
@@ -178,7 +182,7 @@ def build_order_summary(
         f"📋 <b>Buyurtma tafsilotlari:</b>\n{items_block}\n\n"
         f"💰 <b>Jami summa:</b> <b>{format_price(total)}</b>\n"
         f"{cargo_text}\n"
-        f"💌 <b>Tezroq buyurtma berish uchun quyidagi matnni nusxalab @{contact_username.replace('@', '')} ga yuborishingiz mumkin:</b>\n\n"
+        f"💌 <b>Tezroq buyurtma berish uchun quyidagi matnni nusxalab {contact_display} ga yuborishingiz mumkin:</b>\n\n"
         f"<code>{escape(copyable_block)}</code>"
     )
 

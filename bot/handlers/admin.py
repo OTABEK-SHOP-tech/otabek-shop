@@ -91,7 +91,7 @@ async def _claim_ownership_helper(message: Message, user_id: int, code: str) -> 
 
     owner_welcome = (
         "🌸 <b>Bu do'kon endi sizniki / This shop is now yours</b> 🎀\n\n"
-        "Tabriklaymiz! Siz <b>Gulmira Shop</b>ning rasmiy egasi etib tayinlandingiz.\n\n"
+        "Tabriklaymiz! Siz <b>Moonlight Chinese Shop</b>ning rasmiy egasi etib tayinlandingiz.\n\n"
         "✨ <b>Qisqa qo'llanma (3 ta qadam):</b>\n"
         "1️⃣ <b>Yangi mahsulot:</b> /admin buyrug'ini bosing yoki Mini App ichidagi 👑 Admin tugmasidan foydalaning.\n"
         "2️⃣ <b>Kanalni ulash:</b> Botni o'z kanalingizga admin qilib qo'shing — bot avtomatik aniqlaydi va tasdiqlashingiz bilan ulaydi.\n"
@@ -130,7 +130,7 @@ async def handle_admin_command(message: Message, state: FSMContext, command: Com
         return
 
     welcome_text = (
-        "👑 <b>Gulmira Shop — Admin Paneli</b> 🌸\n\n"
+        "👑 <b>Moonlight Chinese Shop — Admin Paneli</b> 🌸\n\n"
         "Quyidagi bo'limlardan birini tanlang yoki kanaldagi istalgan postni bu yerga <b>forward</b> qiling (sehrli tezkor import ✨):"
     )
     await message.answer(welcome_text, reply_markup=get_admin_main_keyboard())
@@ -651,7 +651,7 @@ async def handle_admin_stats(callback: CallbackQuery):
         in_stock_prods = (await session.execute(select(func.count(Product.id)).where(Product.in_stock == True))).scalar() or 0
 
     text = (
-        "📊 <b>Gulmira Shop — Statistika:</b> 🌸\n\n"
+        "📊 <b>Moonlight Chinese Shop — Statistika:</b> 🌸\n\n"
         f"👥 <b>Foydalanuvchilar:</b> {total_users} ta\n"
         f"🧾 <b>Jami buyurtmalar:</b> {total_orders} ta\n"
         f"⏳ <b>Yangi (kutilayotgan) buyurtmalar:</b> {new_orders} ta\n"
@@ -787,13 +787,15 @@ async def process_new_owner_forward(message: Message, state: FSMContext):
                 new_owner_username = u.username
 
     if not new_owner_id:
-        invite_link = f"https://t.me/sakuraaa_chinese_shop_bot?start=claim_{settings.OWNER_SETUP_CODE}"
+        bot_info = await message.bot.get_me() if message.bot else None
+        b_user = bot_info.username if bot_info and bot_info.username else "moonlight_chinese_bot"
+        invite_link = f"https://t.me/{b_user}?start=claim_{settings.OWNER_SETUP_CODE}"
         await message.answer(
             "⚠️ <b>Foydalanuvchini aniqlab bo'lmadi!</b>\n\n"
             "Telegram maxfiylik sozlamalari (Forward Privacy) bu insonning profilini yashirgan bo'lishi mumkin.\n\n"
             "Uni Owner qilishning eng oson yo'llari:\n"
             f"1️⃣ O'sha insonga mana bu havolani yuboring (u 1 ta bosishda Owner bo'ladi):\n<code>{invite_link}</code>\n\n"
-            "2️⃣ Yoki uning <b>@username</b> (masalan: <code>@fkhrdnvvvva</code>) yoki <b>Telegram ID</b> raqamini yozing:"
+            "2️⃣ Yoki uning <b>@username</b> yoki <b>Telegram ID</b> raqamini yozing:"
         )
         return
 
@@ -875,7 +877,7 @@ async def process_new_admin_forward(message: Message, state: FSMContext):
         await message.answer(
             "⚠️ <b>Foydalanuvchini aniqlab bo'lmadi!</b>\n\n"
             "Telegram maxfiylik sozlamalari (Forward Privacy) bu insonning profilini yashirgan bo'lishi mumkin.\n\n"
-            "Iltimos, uning <b>@username</b> (masalan: <code>@fkhrdnvvvva</code>) yoki <b>Telegram ID</b> raqamini yozing:"
+            "Iltimos, uning <b>@username</b> yoki <b>Telegram ID</b> raqamini yozing:"
         )
         return
 
@@ -1154,7 +1156,7 @@ async def handle_delete_single_review(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_menu")
 async def handle_return_admin_menu(callback: CallbackQuery):
-    await callback.message.edit_text("👑 <b>Gulmira Shop — Admin Paneli</b> 🌸", reply_markup=get_admin_main_keyboard())
+    await callback.message.edit_text("👑 <b>Moonlight Chinese Shop — Admin Paneli</b> 🌸", reply_markup=get_admin_main_keyboard())
     await callback.answer()
 
 

@@ -157,8 +157,8 @@ async def handle_start(message: Message, command: CommandObject):
 
         if result == "claimed":
             owner_welcome = (
-                "🌸 <b>Bu do'kon endi sizniki / This shop is now yours</b> 🎀\n\n"
-                "Tabriklaymiz! Siz <b>Gulmira Shop</b>ning rasmiy egasi etib tayinlandingiz.\n\n"
+                "🌙 <b>Bu do'kon endi sizniki / This shop is now yours</b> 🛍️\n\n"
+                "Tabriklaymiz! Siz <b>Moonlight Chinese Shop</b>ning rasmiy egasi etib tayinlandingiz.\n\n"
                 "✨ <b>Qisqa qo'llanma (3 ta qadam):</b>\n"
                 "1️⃣ <b>Yangi mahsulot:</b> /admin buyrug'ini bosing yoki Mini App ichidagi 👑 Admin tugmasidan foydalaning.\n"
                 "2️⃣ <b>Kanalni ulash:</b> Botni o'z kanalingizga admin qilib qo'shing — bot avtomatik aniqlaydi va tasdiqlashingiz bilan ulaydi.\n"

@@ -30,7 +30,7 @@ async def seed_database() -> None:
             Setting(key="delivery_scope", value="O'zbekiston bo'ylab"),
             Setting(key="payment_terms", value="100% oldindan to'lov"),
             Setting(key="location", value="Toshkent"),
-            Setting(key="contact_username", value="fkhrdnvvvva"),
+            Setting(key="contact_username", value="+998939029799"),
             Setting(key="channel_url", value="https://t.me/moonlight_chinese_shop"),
             Setting(key="channel_id", value=""),
             Setting(key="owner_claimed_at", value=""),

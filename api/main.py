@@ -45,10 +45,9 @@ bot_runtime = BotRuntime(bot, dp, mode="polling" if settings.BOT_POLLING_ENABLED
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail before seeding an ephemeral SQLite database on Render.
+    # Warn before seeding an ephemeral SQLite database on Render.
     if os.getenv("RENDER") == "true" and engine.dialect.name != "postgresql":
-        logger.error("Database backend: %s; Render requires DATABASE_URL pointing to PostgreSQL", engine.dialect.name)
-        raise RuntimeError("Configure a Neon/PostgreSQL DATABASE_URL in Render Environment")
+        logger.warning("Database backend: %s on Render. For persistent production data, configure a PostgreSQL/Neon DATABASE_URL.", engine.dialect.name)
     # 1. Initialize DB and seed demo data
     logger.info("Initializing database...")
     await init_db()
@@ -89,12 +88,12 @@ async def lifespan(app: FastAPI):
             await bot.session.close()
         await engine.dispose()
         bot_polling_task = contest_scheduler_task = None
-        logger.info("Gulmira Shop server shut down gracefully.")
+        logger.info("Moonlight Chinese Shop server shut down gracefully.")
 
 
 app = FastAPI(
-    title="Gulmira Shop API",
-    description="Backend API and Mini App server for Gulmira Shop Telegram Store 🌸",
+    title="Moonlight Chinese Shop API",
+    description="Backend API and Mini App server for Moonlight Chinese Shop Telegram Store 🌸",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -150,7 +149,7 @@ async def health_check():
     return JSONResponse(
         status_code=200 if bot_state["healthy"] else 503,
         content={"status": "ok" if bot_state["healthy"] else "degraded",
-                 "shop": "Gulmira Shop 🌸", "version": "1.0.0", "bot": bot_state},
+                 "shop": "Moonlight Chinese Shop 🌸", "version": "1.0.0", "bot": bot_state},
     )
 
 
@@ -174,7 +173,7 @@ else:
     @app.get("/")
     async def index_placeholder():
         return {
-            "message": "Gulmira Shop API is running 🌸",
+            "message": "Moonlight Chinese Shop API is running 🌸",
             "frontend_status": "Vite React Mini App is compiling or not built yet.",
             "api_docs": "/docs",
         }

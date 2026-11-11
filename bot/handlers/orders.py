@@ -34,15 +34,21 @@ async def handle_order_accept(callback: CallbackQuery):
         await session.commit()
         customer_user_id = order.user_id
 
+    contact_display = "+998939029799"
+    async with async_session_factory() as session:
+        c_set = (await session.execute(select(Setting).where(Setting.key == "contact_username"))).scalars().first()
+        if c_set and c_set.value:
+            contact_display = c_set.value if (c_set.value.startswith("+") or c_set.value.isdigit()) else f"@{c_set.value.lstrip('@')}"
+
     # Notify customer
     if bot and customer_user_id:
         try:
             await bot.send_message(
                 chat_id=customer_user_id,
                 text=(
-                    f"🌸 <b>Buyurtmangiz (#{order_id}) qabul qilindi!</b> ✅\n\n"
+                    f"🌙 <b>Buyurtmangiz (#{order_id}) qabul qilindi!</b> ✅\n\n"
                     f"Admin tez orada kargo va to'lov rekvizitlarini yuborish uchun siz bilan bog'lanadi.\n"
-                    f"Savollaringiz bo'lsa @fkhrdnvvvva ga yozishingiz mumkin 💌"
+                    f"Savollaringiz bo'lsa {contact_display} ga yozishingiz mumkin 💌"
                 ),
             )
         except Exception as e:
@@ -82,8 +88,8 @@ async def handle_order_cancel(callback: CallbackQuery):
             await bot.send_message(
                 chat_id=customer_user_id,
                 text=(
-                    f"🌸 <b>Buyurtmangiz (#{order_id}) bekor qilindi.</b> ❌\n\n"
-                    f"Batafsil ma'lumot olish yoki boshqa model tanlash uchun @fkhrdnvvvva ga murojaat qiling 💌"
+                    f"🌙 <b>Buyurtmangiz (#{order_id}) bekor qilindi.</b> ❌\n\n"
+                    f"Batafsil ma'lumot olish yoki boshqa model tanlash uchun {contact_display} ga murojaat qiling 💌"
                 ),
             )
         except Exception as e:

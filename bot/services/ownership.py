@@ -46,12 +46,8 @@ async def claim_ownership(
     valid = used_invite.rowcount == 1
 
     if not valid:
-        owner_exists = (
-            await session.execute(select(Admin.telegram_id).where(Admin.role == "owner"))
-        ).first() is not None
         valid = (
-            not owner_exists
-            and setup_code_is_safe()
+            setup_code_is_safe()
             and hmac.compare_digest(code.encode("utf-8"), settings.OWNER_SETUP_CODE.encode("utf-8"))
         )
 

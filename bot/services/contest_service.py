@@ -715,7 +715,10 @@ async def approve_and_announce_winners(
     await session.commit()
 
     channel_id, _ = await get_channel_info(session)
-    contact_username = "fkhrdnvvvva"
+    res_ct = await session.execute(select(Setting).where(Setting.key == "contact_username"))
+    ct_row = res_ct.scalars().first()
+    raw_contact = ct_row.value if ct_row and ct_row.value else "+998939029799"
+    contact_username = raw_contact if (raw_contact.startswith("+") or raw_contact.isdigit()) else f"@{raw_contact.lstrip('@')}"
 
     # Post channel announcement
     if channel_id and bot and winners:

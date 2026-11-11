@@ -46,16 +46,22 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   const handleDirectAsk = () => {
     haptic.impact('light');
-    const contact = (settings.contact_username || 'fkhrdnvvvva').replace('@', '');
+    const rawContact = settings.contact_username || '+998939029799';
+    const contact = rawContact.replace('@', '');
+    const contactLink = rawContact.startsWith('+') || /^\d+$/.test(rawContact)
+      ? `https://t.me/+${contact.replace('+', '')}`
+      : `https://t.me/${contact}`;
+
     const text = encodeURIComponent(
-      `Assalomu alaykum! 🌸 Sakura shop do'konidan ushbu mahsulot haqida so'ramoqchi edim:\n\n` +
+      `Assalomu alaykum! 🌙 Moonlight Chinese Shop do'konidan ushbu mahsulot haqida so'ramoqchi edim:\n\n` +
       `✨ ${product.title}\n` +
       `💰 Narxi: ${formatPrice(product.price)}\n` +
       (selectedSize ? `📏 O'lcham: ${selectedSize}\n` : '') +
       (selectedColor ? `🎨 Rang: ${selectedColor}\n` : '') +
       `\nMavjudmi? 💌`
     );
-    openTelegramLink(`https://t.me/${contact}?text=${text}`);
+    const sep = contactLink.includes('?') ? '&' : '?';
+    openTelegramLink(`${contactLink}${sep}text=${text}`);
   };
 
   return (

@@ -129,7 +129,7 @@ async def show_user_contest_dashboard(target: Message, user_id: int, show_prize_
 
         # Share text
         share_text = (
-            f"🌸 Gulmira Shop do'konining go'zal konkursida qatnashib, ajoyib sovg'alarni yutib oling! ✨\n"
+            f"🌸 Moonlight Chinese Shop do'konining go'zal konkursida qatnashib, ajoyib sovg'alarni yutib oling! ✨\n"
             f"Sovg'alar: {', '.join(c['prizes'])} 🎀\n\n"  # plain text for the share URL, not HTML
             f"Qatnashish uchun bosing: {link}"
         )
@@ -151,7 +151,7 @@ async def show_user_contest_dashboard(target: Message, user_id: int, show_prize_
             inv_lines.append("\n<i>Hozircha taklif qilinganlar yo'q.</i>")
 
         text = (
-            "🌸 <b>GULMIRA SHOP REFERRAL KONKURS</b> 🎁\n\n"
+            "🌸 <b>MOONLIGHT CHINESE SHOP REFERRAL KONKURS</b> 🎁\n\n"
             f"{format_prize_lines(c['prizes'])}\n\n"
             f"⏳ <b>Tugash vaqti:</b> {c['formatted_ends_at']}\n\n"
             f"📊 <b>Ballingiz:</b> {score} ta do'st\n"
@@ -251,7 +251,7 @@ async def handle_confirm_sub_button(call: CallbackQuery):
 
         if status in ("success", "was_member_before"):
             personal_link = result.get("personal_link", "")
-            share_text = f"🌸 Gulmira Shop konkursida qatnashing va go'zal sovg'alarni yutib oling! ✨\n{personal_link}"
+            share_text = f"🌸 Moonlight Chinese Shop konkursida qatnashing va go'zal sovg'alarni yutib oling! ✨\n{personal_link}"
             share_url = f"https://t.me/share/url?url={urllib.parse.quote(personal_link)}&text={urllib.parse.quote(share_text)}"
 
             markup = InlineKeyboardMarkup(

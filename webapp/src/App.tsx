@@ -34,7 +34,7 @@ export const App: React.FC = () => {
     contact_username: 'fkhrdnvvvva',
     channel_url: 'https://t.me/sakuraaa_chinese_shop',
     has_linked_channel: false,
-    welcome_text: 'Gulmira Shop ga xush kelibsiz! 🌸',
+    welcome_text: 'Moonlight Chinese Shop ga xush kelibsiz! 🌸',
   });
 
   // User State

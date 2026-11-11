@@ -161,7 +161,7 @@ async def handle_admin_contest_menu(call: CallbackQuery, state: FSMContext, noti
                 top_lines.append("<i>Hozircha hech kim ball to'plamagan.</i>")
 
             text = (
-                "🎁 <b>FAOL GULMIRA SHOP KONKURS BOSHQARUVI</b>\n\n"
+                "🎁 <b>FAOL MOONLIGHT CHINESE SHOP KONKURS BOSHQARUVI</b>\n\n"
                 f"{format_prize_lines(active.prizes)}\n\n"
                 f"⏳ <b>Tugash:</b> {ends_str}\n"
                 f"📌 <b>Holat:</b> {active.status.upper()}\n\n"
@@ -474,7 +474,7 @@ async def show_contest_preview(target: Message, state: FSMContext):
 
     preview_text = (
         "👀 <b>KANALDA CHIQADIGAN POST PREVIEW:</b>\n\n"
-        "🌸 <b>GULMIRA SHOP KONKURS</b> 🌸\n\n"
+        "🌸 <b>MOONLIGHT CHINESE SHOP KONKURS</b> 🌸\n\n"
         f"{format_prize_lines(prizes)}\n\n"
         "📌 <b>Shartlar:</b>\n"
         "1. Botga kiring va shaxsiy havolangizni oling\n"

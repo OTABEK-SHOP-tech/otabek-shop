@@ -108,10 +108,14 @@ export const BagPage: React.FC<BagPageProps> = ({
 
   // SUCCESS VIEW AFTER CHECKOUT
   if (completedOrder) {
-    const contact = (settings.contact_username || 'fkhrdnvvvva').replace('@', '');
+    const rawContact = settings.contact_username || '+998939029799';
+    const contact = rawContact.replace('@', '');
+    const contactLink = rawContact.startsWith('+') || /^\d+$/.test(rawContact)
+      ? `https://t.me/+${contact.replace('+', '')}`
+      : `https://t.me/${contact}`;
 
     const copyableSummary =
-      `🌸 Sakura shop — Buyurtma #${completedOrder.id}\n` +
+      `🌙 Moonlight Chinese Shop — Buyurtma #${completedOrder.id}\n` +
       `Mijoz: ${completedOrder.customer_name}\n\n` +
       completedOrder.items_snapshot
         .map(
@@ -160,7 +164,8 @@ export const BagPage: React.FC<BagPageProps> = ({
         <div className="mt-4 flex flex-col gap-2.5">
           <button
             onClick={() => {
-              const url = `https://t.me/${contact}?text=${encodeURIComponent(copyableSummary)}`;
+              const sep = contactLink.includes('?') ? '&' : '?';
+              const url = `${contactLink}${sep}text=${encodeURIComponent(copyableSummary)}`;
               openTelegramLink(url);
             }}
             className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-sakura-rose to-sakura-darkrose text-white font-black text-sm flex items-center justify-center gap-2 shadow-sakura active:scale-95 transition-transform"

@@ -140,14 +140,25 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </button>
 
           <button
-            onClick={() => openTelegramLink(`https://t.me/${(settings.contact_username || 'fkhrdnvvvva').replace('@', '')}`)}
+            onClick={() => {
+              const rawContact = settings.contact_username || '+998939029799';
+              const clean = rawContact.replace('@', '');
+              const link = rawContact.startsWith('+') || /^\d+$/.test(rawContact)
+                ? `https://t.me/+${clean.replace('+', '')}`
+                : `https://t.me/${clean}`;
+              openTelegramLink(link);
+            }}
             className="flex items-center justify-between p-3 rounded-2xl bg-sakura-cream dark:bg-sakura-darkcardsoft text-left hover:bg-sakura-blush/40 transition-colors"
           >
             <div className="flex items-center gap-2.5">
               <span className="text-lg">💌</span>
               <div>
                 <span className="text-xs font-extrabold block">Do'kon egasi & Buyurtmalar</span>
-                <span className="text-[11px] text-sakura-rose font-mono">@{settings.contact_username || 'fkhrdnvvvva'}</span>
+                <span className="text-[11px] text-sakura-rose font-mono">
+                  {settings.contact_username
+                    ? (settings.contact_username.startsWith('+') ? settings.contact_username : `@${settings.contact_username.replace('@', '')}`)
+                    : '+998 93 902 97 99'}
+                </span>
               </div>
             </div>
             <ExternalLink className="w-4 h-4 text-sakura-rose/70" />
@@ -159,7 +170,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       <div className="p-4 rounded-3xl bg-white/90 dark:bg-sakura-darkcard/90 backdrop-blur-md border border-sakura-pink/20 shadow-sakura-sm text-xs text-sakura-plum/80 dark:text-sakura-blush/80 space-y-1.5">
         <div className="font-extrabold text-sakura-rose flex items-center gap-1.5 mb-1">
           <Heart className="w-3.5 h-3.5 fill-sakura-rose" />
-          <span>Gulmira Shop haqida</span>
+          <span>Moonlight Chinese Shop haqida</span>
         </div>
         <p>📦 Kargo narxi: {formatPrice(settings.cargo_rate || 12000)} / 100g</p>
         <p>⏳ Yetkazib berish muddati: {settings.delivery_days || "10–15 kun"}</p>
@@ -169,7 +180,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       </div>
 
       <div className="text-center mt-6 text-[10px] text-sakura-plum/40 dark:text-sakura-blush/40">
-        Gulmira Shop Mini App v1.0.0 🌸
+        Moonlight Chinese Shop Mini App v1.0.0 🌸
       </div>
     </div>
   );

@@ -271,10 +271,14 @@ async def admin_update_order_status(
     # Notify customer via Telegram if status changed
     if bot and order.user_id:
         status_text = "qabul qilindi ✅" if payload.status == "accepted" else "bekor qilindi ❌"
+        res_contact = await db.execute(select(Setting).where(Setting.key == "contact_username"))
+        contact_s = res_contact.scalars().first()
+        raw_c = contact_s.value if contact_s and contact_s.value else "+998939029799"
+        contact_display = raw_c if (raw_c.startswith("+") or raw_c.isdigit()) else f"@{raw_c.lstrip('@')}"
         try:
             await bot.send_message(
                 chat_id=order.user_id,
-                text=f"🌸 <b>Buyurtmangiz (#{order.id}) holati o'zgardi:</b>\nHolat: <b>{status_text}</b>\n\nSavollaringiz bo'lsa @fkhrdnvvvva ga yozishingiz mumkin 💌",
+                text=f"🌙 <b>Buyurtmangiz (#{order.id}) holati o'zgardi:</b>\nHolat: <b>{status_text}</b>\n\nSavollaringiz bo'lsa {contact_display} ga yozishingiz mumkin 💌",
             )
         except Exception as e:
             logger.warning(f"Could not notify user {order.user_id} of order status: {e}")

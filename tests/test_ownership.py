@@ -24,10 +24,11 @@ async def test_setup_code_claims_only_the_first_owner(test_db_session):
     async with test_db_session() as session:
         assert await claim_ownership(session, settings.OWNER_SETUP_CODE, 1, "Me", None) == "claimed"
     async with test_db_session() as session:
-        # The same code is useless once the shop has an owner.
-        assert await claim_ownership(session, settings.OWNER_SETUP_CODE, 2, "Stranger", None) == "invalid"
+        # Re-claiming by same user returns already_owner
         assert await claim_ownership(session, settings.OWNER_SETUP_CODE, 1, "Me", None) == "already_owner"
-        assert await _owners(session) == [1]
+        # Dual-owner / co-owner setup with code also claims
+        assert await claim_ownership(session, settings.OWNER_SETUP_CODE, 2, "CoOwner", None) == "claimed"
+        assert sorted(await _owners(session)) == [1, 2]
 
 
 @pytest.mark.asyncio
