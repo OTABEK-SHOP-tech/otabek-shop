@@ -31,7 +31,7 @@ export const App: React.FC = () => {
     delivery_scope: "O'zbekiston bo'ylab",
     payment_terms: "100% oldindan to'lov",
     location: 'Toshkent',
-    contact_username: '+998939029799',
+    contact_username: 'MOONLIGHT_ADMINNN',
     channel_url: 'https://t.me/moonlight_chinese_shop',
     has_linked_channel: false,
     welcome_text: 'Moonlight Chinese Shop ga xush kelibsiz! 🌸',

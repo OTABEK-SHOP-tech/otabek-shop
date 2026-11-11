@@ -141,7 +141,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
           <button
             onClick={() => {
-              const rawContact = settings.contact_username || '+998939029799';
+              const rawContact = settings.contact_username || 'MOONLIGHT_ADMINNN';
               const clean = rawContact.replace('@', '');
               const link = rawContact.startsWith('+') || /^\d+$/.test(rawContact)
                 ? `https://t.me/+${clean.replace('+', '')}`
@@ -157,7 +157,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 <span className="text-[11px] text-sakura-rose font-mono">
                   {settings.contact_username
                     ? (settings.contact_username.startsWith('+') ? settings.contact_username : `@${settings.contact_username.replace('@', '')}`)
-                    : '+998 93 902 97 99'}
+                    : '@MOONLIGHT_ADMINNN'}
                 </span>
               </div>
             </div>

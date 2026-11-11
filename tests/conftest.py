@@ -83,7 +83,7 @@ async def test_db_session():
             Setting(key="cargo_rate", value="12000"),
             Setting(key="delivery_days", value="10–15 kun"),
             Setting(key="delivery_scope", value="O'zbekiston bo'ylab"),
-            Setting(key="contact_username", value="+998939029799"),
+            Setting(key="contact_username", value="MOONLIGHT_ADMINNN"),
             Setting(key="channel_id", value=""),
             Setting(key="owner_claimed_at", value=""),
             Category(slug="jempir", name="Jempir", emoji="🧶", sort_order=1),

@@ -31,7 +31,7 @@ async def send_welcome_greeting(target: Message, user_id: int):
     banner_path = Path(settings.MEDIA_CACHE_DIR) / "bot_banner.png"
     channel_link = DEFAULT_CHANNEL_URL
     chat_link = DEFAULT_CHAT_URL
-    contact_user = "+998939029799"
+    contact_user = "MOONLIGHT_ADMINNN"
 
     try:
         async with async_session_factory() as session:
@@ -286,7 +286,7 @@ async def handle_start(message: Message, command: CommandObject):
                     desc_text = f"\n\n{product.description}" if product.description else ""
                     stock_badge = "" if product.in_stock else "\n\n❌ <b>Sotildi (Hozirda mavjud emas)</b>"
 
-                    contact_val = "+998939029799"
+                    contact_val = "MOONLIGHT_ADMINNN"
                     try:
                         c_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
                         c_row = c_s.scalars().first()
@@ -400,7 +400,7 @@ async def handle_reviews(message: Message):
 async def handle_contact(message: Message):
     if not await _check_dual_sub_or_prompt(message):
         return
-    contact_val = "+998939029799"
+    contact_val = "MOONLIGHT_ADMINNN"
     try:
         async with async_session_factory() as session:
             ct_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))

@@ -179,7 +179,7 @@ class SettingsDict(BaseModel):
     delivery_scope: str = "O'zbekiston bo'ylab"
     payment_terms: str = "100% oldindan to'lov"
     location: str = "Toshkent"
-    contact_username: str = "+998939029799"
+    contact_username: str = "MOONLIGHT_ADMINNN"
     channel_url: str = "https://t.me/moonlight_chinese_shop"
     channel_id: str = ""
     welcome_text: str = "Moonlight Chinese Shop ga xush kelibsiz! 🌸"

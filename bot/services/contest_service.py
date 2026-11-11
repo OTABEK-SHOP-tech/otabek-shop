@@ -717,7 +717,7 @@ async def approve_and_announce_winners(
     channel_id, _ = await get_channel_info(session)
     res_ct = await session.execute(select(Setting).where(Setting.key == "contact_username"))
     ct_row = res_ct.scalars().first()
-    raw_contact = ct_row.value if ct_row and ct_row.value else "+998939029799"
+    raw_contact = ct_row.value if ct_row and ct_row.value else "MOONLIGHT_ADMINNN"
     contact_username = raw_contact if (raw_contact.startswith("+") or raw_contact.isdigit()) else f"@{raw_contact.lstrip('@')}"
 
     # Post channel announcement
@@ -731,7 +731,7 @@ async def approve_and_announce_winners(
             )
 
         lines.append("\nBarcha ishtirokchilarga katta rahmat! 💗✨")
-        lines.append(f"Sovg'alarni olish uchun @{contact_username} ga yozing 💌")
+        lines.append(f"Sovg'alarni olish uchun {contact_username} ga yozing 💌")
         channel_post = "\n".join(lines)
 
         try:
@@ -747,7 +747,7 @@ async def approve_and_announce_winners(
                     f"Tabriklaymiz! 🎉 Siz Moonlight Chinese Shop konkursida <b>{w['rank']}-o'rin</b>ni egalladingiz! 🌙\n"
                     f"🎁 Sovg'angiz: <b>{escape(prizes[w['rank'] - 1])}</b>\n"
                     f"Natijangiz: <b>{w['score']}</b> ta taklif qilingan do'st.\n\n"
-                    f"Sovg'angizni qabul qilish uchun do'kon egamiz @{contact_username} ga yozing 💌"
+                    f"Sovg'angizni qabul qilish uchun do'kon egamiz {contact_username} ga yozing 💌"
                 )
                 await bot.send_message(chat_id=w["user_id"], text=dm_text)
             except Exception as e:

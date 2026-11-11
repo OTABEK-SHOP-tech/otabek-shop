@@ -144,7 +144,7 @@ export const BagPage: React.FC<BagPageProps> = ({
 
   // SUCCESS VIEW AFTER CHECKOUT
   if (completedOrder) {
-    const rawContact = settings.contact_username || '+998939029799';
+    const rawContact = settings.contact_username || 'MOONLIGHT_ADMINNN';
     const contact = rawContact.replace('@', '');
     const contactLink = rawContact.startsWith('+') || /^\d+$/.test(rawContact)
       ? `https://t.me/+${contact.replace('+', '')}`

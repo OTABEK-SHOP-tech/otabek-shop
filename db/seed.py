@@ -16,8 +16,14 @@ async def seed_database() -> None:
             session.add(Admin(telegram_id=8643984824, name="Otabek.", username="obidjonovic2", role="owner"))
             added_admin = True
         if 8413799379 not in admin_ids:
-            session.add(Admin(telegram_id=8413799379, name="💞Gulmira💞", username=None, role="owner"))
+            session.add(Admin(telegram_id=8413799379, name="💞Gulmira💞", username="MOONLIGHT_ADMINNN", role="owner"))
             added_admin = True
+        else:
+            # Update username if already in admins
+            for a in existing_admins:
+                if a.telegram_id == 8413799379:
+                    a.username = "MOONLIGHT_ADMINNN"
+                    added_admin = True
         if added_admin:
             await session.commit()
 
@@ -43,7 +49,7 @@ async def seed_database() -> None:
                 Setting(key="delivery_scope", value="O'zbekiston bo'ylab"),
                 Setting(key="payment_terms", value="100% oldindan to'lov"),
                 Setting(key="location", value="Toshkent"),
-                Setting(key="contact_username", value="+998939029799"),
+                Setting(key="contact_username", value="MOONLIGHT_ADMINNN"),
                 Setting(key="channel_url", value="https://t.me/moonlight_chinese_shop"),
                 Setting(key="channel_id", value="-1004378811161"),
                 Setting(key="chat_url", value="https://t.me/MY_interesno"),

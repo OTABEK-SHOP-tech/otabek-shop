@@ -65,7 +65,7 @@ def build_channel_caption(
     cargo_rate: int = 12000,
     delivery_days: str = "10–15 kun",
     delivery_scope: str = "O'zbekiston bo'ylab",
-    contact_username: str = "+998939029799",
+    contact_username: str = "MOONLIGHT_ADMINNN",
     title: Optional[str] = None,
 ) -> str:
     """
@@ -75,7 +75,7 @@ def build_channel_caption(
     📦 Kargo: 12.000 so'm / 100g
     ⏳ 10–15 kun
     🚚 Dastavka: O'zbekiston bo'ylab
-    Buyurtma berish uchun +998939029799 ga yozing 💌
+    Buyurtma berish uchun @MOONLIGHT_ADMINNN ga yozing 💌
     """
     clean_cat = category_slug.replace("#", "").strip()
     tag_line = f"#{clean_cat} 🌸"
@@ -150,7 +150,7 @@ def build_order_summary(
     items: List[Dict[str, Any]],
     total: int,
     estimated_cargo: int = 0,
-    contact_username: str = "+998939029799",
+    contact_username: str = "MOONLIGHT_ADMINNN",
 ) -> Dict[str, str]:
     """
     Build neat order summary for admin and customer.

@@ -273,7 +273,7 @@ async def admin_update_order_status(
         status_text = "qabul qilindi ✅" if payload.status == "accepted" else "bekor qilindi ❌"
         res_contact = await db.execute(select(Setting).where(Setting.key == "contact_username"))
         contact_s = res_contact.scalars().first()
-        raw_c = contact_s.value if contact_s and contact_s.value else "+998939029799"
+        raw_c = contact_s.value if contact_s and contact_s.value else "MOONLIGHT_ADMINNN"
         contact_display = raw_c if (raw_c.startswith("+") or raw_c.isdigit()) else f"@{raw_c.lstrip('@')}"
         try:
             await bot.send_message(

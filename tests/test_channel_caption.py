@@ -35,3 +35,11 @@ def test_parse_channel_post_shortcut():
     parsed = parse_channel_post(sample_post)
     assert parsed["category"] == "jempir"
     assert parsed["price"] == 99000
+
+
+def test_build_channel_caption_default_username():
+    caption = build_channel_caption(
+        category_slug="jempir",
+        price=99000,
+    )
+    assert "@MOONLIGHT_ADMINNN" in caption

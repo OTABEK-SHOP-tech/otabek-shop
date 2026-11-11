@@ -75,7 +75,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   const handleDirectAsk = () => {
     haptic.impact('light');
-    const rawContact = settings.contact_username || '+998939029799';
+    const rawContact = settings.contact_username || 'MOONLIGHT_ADMINNN';
     const contact = rawContact.replace('@', '');
     const contactLink = rawContact.startsWith('+') || /^\d+$/.test(rawContact)
       ? `https://t.me/+${contact.replace('+', '')}`
