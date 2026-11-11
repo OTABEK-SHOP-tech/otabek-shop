@@ -19,6 +19,7 @@ def enrich_product_out(product: Product, cargo_rate: int = 12000) -> ProductOut:
         description=product.description or "",
         price=product.price,
         old_price=product.old_price,
+        source_price=getattr(product, "source_price", None),
         category=product.category,
         photos=product.photos or [],
         sizes=product.sizes or [],
@@ -31,6 +32,7 @@ def enrich_product_out(product: Product, cargo_rate: int = 12000) -> ProductOut:
         created_at=product.created_at,
         formatted_price=format_price(product.price),
         formatted_old_price=format_price(product.old_price) if product.old_price else None,
+        formatted_source_price=format_price(product.source_price) if getattr(product, "source_price", None) else None,
         cargo_estimate=cargo,
         formatted_cargo_estimate=format_price(cargo),
     )

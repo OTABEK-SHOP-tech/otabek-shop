@@ -64,6 +64,7 @@ class Product(Base):
     description = Column(Text, nullable=True, default="")
     price = Column(Integer, nullable=False)  # in so'm, e.g. 99000
     old_price = Column(Integer, nullable=True)  # in so'm, e.g. 120000
+    source_price = Column(Integer, nullable=True)  # supplier/original price in so'm, e.g. 95000
     category = Column(String(100), ForeignKey("categories.slug"), nullable=False, index=True)
     photos = Column(JSON, nullable=False, default=list)  # list of file_ids / local filenames
     sizes = Column(JSON, nullable=False, default=list)  # list of strings e.g. ["S", "M", "L"]

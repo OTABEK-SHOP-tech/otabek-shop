@@ -72,6 +72,11 @@ def _add_missing_columns(sync_conn) -> None:
         if "receipt_photo_id" not in existing_orders:
             sync_conn.execute(text("ALTER TABLE orders ADD COLUMN receipt_photo_id VARCHAR(255) NULL"))
 
+    if insp.has_table("products"):
+        existing_products = {col["name"] for col in insp.get_columns("products")}
+        if "source_price" not in existing_products:
+            sync_conn.execute(text("ALTER TABLE products ADD COLUMN source_price INTEGER NULL"))
+
 
 async def init_db() -> None:
     async with engine.begin() as conn:

@@ -9,6 +9,7 @@ class ProductBase(BaseModel):
     description: Optional[str] = Field(default="", max_length=5000)
     price: int = Field(..., ge=0, le=1_000_000_000)
     old_price: Optional[int] = Field(default=None, ge=0, le=1_000_000_000)
+    source_price: Optional[int] = Field(default=None, ge=0, le=1_000_000_000)
     category: str = Field(..., min_length=1, max_length=100)
     photos: List[str] = Field(default_factory=list, max_length=15)
     sizes: List[str] = Field(default_factory=list, max_length=20)
@@ -28,6 +29,7 @@ class ProductUpdate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=5000)
     price: Optional[int] = Field(default=None, ge=0, le=1_000_000_000)
     old_price: Optional[int] = Field(default=None, ge=0, le=1_000_000_000)
+    source_price: Optional[int] = Field(default=None, ge=0, le=1_000_000_000)
     category: Optional[str] = Field(default=None, min_length=1, max_length=100)
     photos: Optional[List[str]] = None
     sizes: Optional[List[str]] = None
@@ -44,6 +46,7 @@ class ProductOut(ProductBase):
     created_at: datetime
     formatted_price: str = ""
     formatted_old_price: Optional[str] = None
+    formatted_source_price: Optional[str] = None
     cargo_estimate: int = 0
     formatted_cargo_estimate: str = ""
 

@@ -48,6 +48,7 @@ async def admin_create_product(
         description=payload.description or "",
         price=payload.price,
         old_price=payload.old_price,
+        source_price=payload.source_price,
         category=payload.category,
         photos=payload.photos,
         sizes=payload.sizes,

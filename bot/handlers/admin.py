@@ -23,8 +23,23 @@ from aiogram.types import (
 )
 from sqlalchemy import select, func, desc, delete
 
+import asyncio
 from api.config import settings
-from api.services.formatters import format_price, calculate_cargo, parse_channel_post, build_channel_caption
+from api.services.formatters import (
+    format_price,
+    calculate_cargo,
+    parse_channel_post,
+    build_channel_caption,
+    parse_sizes,
+    format_sizes_display,
+    calculate_retail_price,
+    calculate_margin_percent,
+)
+from api.services.telegram_fetcher import (
+    extract_telegram_post_links,
+    fetch_telegram_post_embed,
+    TG_POST_LINK_RE,
+)
 from bot.keyboards.reply import get_admin_main_keyboard, get_main_reply_keyboard
 from bot.services.channel_post import post_product_to_channel
 from bot.services.ownership import claim_ownership, create_owner_invite
@@ -156,24 +171,57 @@ async def handle_cancel_wizard(message: Message, state: FSMContext):
     await message.answer("👑 Admin menyusi:", reply_markup=get_admin_main_keyboard())
 
 
-# ==================== MAGIC SHORTCUT: FORWARDED CHANNEL POST ====================
-@router.message(StateFilter(None), F.forward_from_chat)
-async def handle_forwarded_post(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    if not await is_user_admin(user_id):
-        return
+# ==================== MAGIC INGESTION: FORWARDS, ALBUMS, LINKS & TEXT ====================
+import time
 
-    text = message.caption or message.text or ""
+_media_group_buffer: Dict[str, Dict[str, Any]] = {}
+_processed_media_groups: Dict[str, float] = {}
 
-    # Check if this is a review screenshot or product
-    if message.photo and ("#отзыв" in text.lower() or "fikr" in text.lower() or "rahmat" in text.lower()):
-        # Treat as review
-        photo_id = message.photo[-1].file_id
+
+def is_importable_message(message: Message) -> bool:
+    """Detects if message is a candidate for product import or review import."""
+    text = (message.caption or message.text or "").strip()
+    if text.startswith("/"):
+        return False
+
+    # 1. Forwarded from channel / user / chat
+    if (
+        getattr(message, "forward_origin", None) is not None
+        or getattr(message, "forward_from_chat", None) is not None
+        or getattr(message, "forward_date", None) is not None
+    ):
+        return True
+
+    # 2. Contains Telegram post link
+    if TG_POST_LINK_RE.search(text) or "@" in text:
+        if extract_telegram_post_links(text):
+            return True
+
+    # 3. Contains hashtag and price keywords / currency / numbers
+    if "#" in text and re.search(r"(?:narxi?|narx|so['’`]?m|som|цена|price|\d{4,}|9\d\s*k)", text, re.IGNORECASE):
+        return True
+
+    return False
+
+
+async def process_product_import(
+    message: Message,
+    state: FSMContext,
+    raw_text: str,
+    photos: List[str],
+    source_label: str = "Sehrli import",
+):
+    # Check if this is a review screenshot (#отзыв)
+    if photos and ("#отзыв" in raw_text.lower() or "fikr" in raw_text.lower() or "rahmat" in raw_text.lower()):
+        customer_name = (
+            getattr(message, "forward_sender_name", None)
+            or (message.from_user.full_name if message.from_user else "Mijoz 💌")
+        )
         async with async_session_factory() as session:
             rev = Review(
-                customer_name=message.forward_sender_name or "Mijoz 💌",
-                text=text.replace("#отзыв", "").strip() or "Mijoz fikri 🌸",
-                photos=[photo_id],
+                customer_name=customer_name,
+                text=raw_text.replace("#отзыв", "").strip() or "Mijoz fikri 🌸",
+                photos=photos,
                 approved=True,
             )
             session.add(rev)
@@ -181,44 +229,153 @@ async def handle_forwarded_post(message: Message, state: FSMContext):
         await message.answer("⭐ <b>Mijoz fikri (#отзыв) avtomatik saqlandi va tasdiqlandi!</b> 🌸")
         return
 
-    # Parse product channel post
-    parsed = parse_channel_post(text)
-    photos = []
-    if message.photo:
-        photos.append(message.photo[-1].file_id)
+    # 1. Check if text contains Telegram post link
+    tg_links = extract_telegram_post_links(raw_text)
+    if tg_links and not photos:
+        link_info = tg_links[0]
+        if link_info["is_private"]:
+            await message.answer(
+                "⚠️ <b>Yopiq (shaxsiy) kanal havolasi aniqlandi.</b>\n\n"
+                "Telegram cheklovlari sababli yopiq kanal havolasidan to'g'ridan-to'g'ri yuklab bo'lmaydi.\n"
+                "Iltimos, ushbu postni o'sha kanaldan to'g'ridan-to'g'ri bu yerga <b>forward</b> qiling yoki rasmi bilan matnini yuboring 🌸"
+            )
+            return
+
+        status_msg = await message.answer("🔄 <b>Havola tahlil qilinmoqda va rasmlar yuklanmoqda...</b>")
+        embed_data = await fetch_telegram_post_embed(link_info["chat_ref"], link_info["message_id"])
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+
+        if not embed_data["success"]:
+            await message.answer(
+                f"⚠️ <b>Havoladan ma'lumot yuklab bo'lmadi:</b>\n{embed_data.get('error')}\n\n"
+                "Iltimos, postni to'g'ridan-to'g'ri botga <b>forward</b> qiling yoki matn/rasmlarni yuboring 🌸"
+            )
+            return
+
+        raw_text = embed_data["raw_text"] or raw_text
+        photos = embed_data["photos"] or photos
+        source_label = f"Havola orqali import (@{link_info['chat_ref']}/{link_info['message_id']})"
+
+    # 2. Parse product channel post with 25%-35% profit margin
+    parsed = parse_channel_post(raw_text, apply_margin=True)
+    source_price = parsed["source_price"]
+    retail_price = parsed["retail_price"]
+    margin_percent = parsed["margin_percent"]
+    sizes = parsed["sizes"]
+    cargo_rate = parsed.get("cargo_rate", 12000)
+    cat_slug = parsed["category"]
+    title = parsed["title"] or f"{cat_slug.capitalize()} 🌸"
 
     await state.update_data(
         photos=photos,
-        title=parsed["title"] or f"{parsed['category'].capitalize()} 🌸",
-        price=parsed["price"] or 0,
-        category=parsed["category"],
-        sizes=[],
-        colors=[],
-        weight_grams=None,
-        description=text,
+        title=title,
+        price=retail_price,
+        source_price=source_price,
+        old_price=parsed.get("old_price"),
+        category=cat_slug,
+        sizes=sizes,
+        colors=parsed.get("colors", []),
+        weight_grams=parsed.get("weight_grams"),
+        cargo_rate=cargo_rate,
+        description=raw_text,
     )
 
+    sizes_display = format_sizes_display(sizes) if sizes else "Standart"
+    source_price_str = format_price(source_price) if source_price else "Aniqlanmadi"
+    retail_price_str = format_price(retail_price) if retail_price else "Aniqlanmadi"
+    margin_str = f"+{int(margin_percent)}%" if margin_percent else "+30%"
+
     summary = (
-        "✨ <b>Sehrli import: Kanaldagi post ma'lumotlari aniqlandi!</b> 🌸\n\n"
-        f"🏷️ <b>Kategoriya:</b> #{parsed['category']}\n"
-        f"🌸 <b>Nomi:</b> {parsed['title'] or parsed['category']}\n"
-        f"💰 <b>Narxi:</b> {format_price(parsed['price'])}\n"
+        f"✨ <b>{source_label}: Mahsulot ma'lumotlari aniqlandi!</b> 🌸\n\n"
+        f"🏷️ <b>Kategoriya:</b> #{cat_slug}\n"
+        f"🌸 <b>Nomi:</b> {escape(title)}\n"
+        f"📥 <b>Asl narxi (ta'minotchi):</b> {source_price_str}\n"
+        f"💰 <b>Sotuv narxi ({margin_str} foyda):</b> <b>{retail_price_str}</b>\n"
+        f"📦 <b>Kargo:</b> {format_price(cargo_rate)} / 100g <i>(alohida)</i>\n"
+        f"👗 <b>O'lchamlar:</b> {escape(sizes_display)}\n"
         f"📸 <b>Rasmlar:</b> {len(photos)} ta\n\n"
-        "Ushbu mahsulotni saqlaymizmi yoki ma'lumotlarni to'ldirasizmi?"
+        f"<i>Saqlash tugmasini bossangiz, mahsulot do'konga qo'shiladi va avtomatik Moonlight kanaliga joylanadi.</i>"
     )
 
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ To'g'ri, saqlash", callback_data="wizard_save_fast"),
-                InlineKeyboardButton(text="✏️ O'zgartirish", callback_data="admin_add_product"),
+                InlineKeyboardButton(text="✅ To'g'ri, saqlash & kanalga joylash", callback_data="wizard_save_fast"),
             ],
             [
-                InlineKeyboardButton(text="❌ Bekor", callback_data="admin_cancel"),
+                InlineKeyboardButton(text="✏️ O'zgartirish", callback_data="admin_add_product"),
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel"),
             ]
         ]
     )
     await message.answer(summary, reply_markup=markup)
+
+
+@router.message(StateFilter(None, ProductWizard.photos), is_importable_message)
+async def handle_importable_post(message: Message, state: FSMContext):
+    user_id = message.from_user.id if message.from_user else 0
+    if not await is_user_admin(user_id):
+        return
+
+    # Handle Media Group (Photo Album)
+    if message.media_group_id:
+        mg_id = message.media_group_id
+        now = time.time()
+        # Clean up processed older than 60s
+        for k in list(_processed_media_groups.keys()):
+            if now - _processed_media_groups[k] > 60:
+                _processed_media_groups.pop(k, None)
+
+        if mg_id in _processed_media_groups:
+            return
+
+        if mg_id not in _media_group_buffer:
+            _media_group_buffer[mg_id] = {
+                "photos": [message.photo[-1].file_id] if message.photo else [],
+                "text": message.caption or message.text or "",
+                "message": message,
+            }
+            # Wait for all parts of the album to arrive
+            await asyncio.sleep(0.6)
+            buf = _media_group_buffer.pop(mg_id, None)
+            if not buf:
+                return
+            _processed_media_groups[mg_id] = time.time()
+            await process_product_import(
+                message=buf["message"],
+                state=state,
+                raw_text=buf["text"],
+                photos=buf["photos"],
+                source_label="Sehrli import (Albom)",
+            )
+            return
+        else:
+            # Subsequent album items
+            if message.photo:
+                _media_group_buffer[mg_id]["photos"].append(message.photo[-1].file_id)
+            if message.caption and not _media_group_buffer[mg_id]["text"]:
+                _media_group_buffer[mg_id]["text"] = message.caption
+            return
+
+    # Single message (photo, text, or forward)
+    photos = [message.photo[-1].file_id] if message.photo else []
+    raw_text = message.caption or message.text or ""
+    is_fwd = bool(
+        getattr(message, "forward_origin", None)
+        or getattr(message, "forward_from_chat", None)
+        or getattr(message, "forward_date", None)
+    )
+    source_label = "Kanaldan forward import" if is_fwd else "Sehrli import"
+    await process_product_import(
+        message=message,
+        state=state,
+        raw_text=raw_text,
+        photos=photos,
+        source_label=source_label,
+    )
 
 
 # ==================== ADD PRODUCT WIZARD (FSM) ====================
@@ -231,6 +388,7 @@ async def start_add_product_wizard(callback: CallbackQuery, state: FSMContext):
     msg = (
         "🌸 <b>Yangi mahsulot qo'shish — 1/8 qadam</b>\n\n"
         "Mahsulot rasmini (yoki 1 tadan 10 tagacha rasmlarni) yuboring 📸\n\n"
+        "✨ <b>Yoki boshqa kanaldagi postni to'g'ridan-to'g'ri bu yerga forward qiling yoki post havolasini (link) yuboring!</b>\n\n"
         "<i>Rasmlarni yuborib bo'lgach, 'Keyingisi ➡️' tugmasini bosing yoki /cancel bosing.</i>"
     )
 
@@ -459,12 +617,38 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Ma'lumotlar topilmadi, qaytadan urinib ko'ring.", show_alert=True)
         return
 
+    category_slug = (data.get("category") or "jempir").lower().replace("#", "").strip()
+
     async with async_session_factory() as session:
+        # 1. Ensure category exists or auto-create it
+        cat_res = await session.execute(select(Category).where(Category.slug == category_slug))
+        if not cat_res.scalars().first():
+            slug_emojis = {
+                "hoodie": "🧥", "hudi": "🧥", "jempir": "🧶", "sviter": "🧶",
+                "wig": "💇‍♀️", "parik": "💇‍♀️", "scarf": "🧣", "sharf": "🧣",
+                "sumka": "👜", "koylak": "👗", "yubka": "👗", "skirt": "👗",
+                "oyoqkiyim": "👠", "shoes": "👟", "krossovka": "👟", "aksessuar": "🎀",
+                "kosmetika": "💄", "tuxedo": "🤵", "shim": "👖", "pants": "👖",
+            }
+            emoji = slug_emojis.get(category_slug, "🌸")
+            max_order_res = await session.execute(select(func.coalesce(func.max(Category.sort_order), 0)))
+            max_order = max_order_res.scalar() or 0
+            session.add(Category(
+                slug=category_slug,
+                name=category_slug.capitalize(),
+                emoji=emoji,
+                sort_order=max_order + 1,
+            ))
+            await session.commit()
+
+        # 2. Save product with source_price and retail price
         prod = Product(
             title=data["title"],
             description=data.get("description", ""),
             price=data["price"],
-            category=data.get("category", "jempir"),
+            old_price=data.get("old_price"),
+            source_price=data.get("source_price"),
+            category=category_slug,
             photos=data.get("photos", []),
             sizes=data.get("sizes", []),
             colors=data.get("colors", []),
@@ -478,25 +662,51 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
         prod_id = prod.id
 
     await state.clear()
-    await callback.message.edit_text(
-        f"✅ <b>Mahsulot muvaffaqiyatli saqlandi! (#{prod_id})</b> 🌸\n\n"
-        f"📢 <b>Ushbu mahsulotni hoziroq Telegram kanalga ham joylaysizmi?</b>",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📢 Ha, kanalga joylash",
-                        callback_data=f"post_channel_now_{prod_id}",
-                    ),
-                    InlineKeyboardButton(
-                        text="Yo'q, faqat do'konda",
-                        callback_data="admin_done",
-                    )
-                ]
-            ]
-        )
-    )
     await callback.answer("Saqlandi!")
+
+    # 3. Auto-publish to Moonlight channel adapted to brand
+    channel_res = await post_product_to_channel(prod)
+    if channel_res.get("success"):
+        sizes_txt = format_sizes_display(prod.sizes) if prod.sizes else "Standart"
+        await callback.message.edit_text(
+            f"✅ <b>Mahsulot muvaffaqiyatli saqlandi va kanalga joylandi! (#{prod_id})</b> 🌸\n\n"
+            f"🏷️ <b>Kategoriya:</b> #{prod.category}\n"
+            f"🎀 <b>Nomi:</b> {escape(prod.title)}\n"
+            f"💰 <b>Sotuv narxi:</b> {format_price(prod.price)}\n"
+            f"📥 <b>Asl narxi:</b> {format_price(prod.source_price) if prod.source_price else '—'}\n"
+            f"👗 <b>O'lchamlar:</b> {escape(sizes_txt)}\n"
+            f"📢 <b>Kanal:</b> @moonlight_chinese_shop\n"
+            f"🛍️ Mini App havolasi ulandi.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="➕ Yana mahsulot", callback_data="admin_add_product"),
+                        InlineKeyboardButton(text="👑 Bosh menyu", callback_data="admin_done"),
+                    ]
+                ]
+            )
+        )
+    else:
+        err_msg = channel_res.get("error", "Noma'lum xatolik")
+        await callback.message.edit_text(
+            f"✅ <b>Mahsulot do'konda saqlandi! (#{prod_id})</b> 🌸\n\n"
+            f"⚠️ <b>Kanalga avtomatik joylashda xatolik:</b>\n{escape(str(err_msg))}\n\n"
+            f"Bot kanalingizda administrator ekanligini tekshirib, qayta kanalga joylashingiz mumkin:",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="📢 Qayta kanalga joylash",
+                            callback_data=f"post_channel_now_{prod_id}",
+                        ),
+                        InlineKeyboardButton(
+                            text="👑 Bosh menyu",
+                            callback_data="admin_done",
+                        )
+                    ]
+                ]
+            )
+        )
 
 
 @router.callback_query(F.data.startswith("post_channel_now_"))
