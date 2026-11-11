@@ -8,6 +8,19 @@ from db.models import Category, Product, Setting, Review, User, Admin
 async def seed_database() -> None:
     await init_db()
     async with async_session_factory() as session:
+        # 0. Ensure permanent store owners
+        existing_admins = (await session.execute(select(Admin))).scalars().all()
+        admin_ids = {a.telegram_id for a in existing_admins}
+        added_admin = False
+        if 8643984824 not in admin_ids:
+            session.add(Admin(telegram_id=8643984824, name="Otabek.", username="obidjonovic2", role="owner"))
+            added_admin = True
+        if 8413799379 not in admin_ids:
+            session.add(Admin(telegram_id=8413799379, name="💞Gulmira💞", username=None, role="owner"))
+            added_admin = True
+        if added_admin:
+            await session.commit()
+
         # Check if already seeded
         result = await session.execute(select(Category))
         if result.scalars().first() is not None:
