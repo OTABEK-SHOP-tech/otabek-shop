@@ -30,6 +30,8 @@ class User(Base):
     name = Column(String(255), nullable=False, default="")
     username = Column(String(255), nullable=True)
     language = Column(String(10), nullable=False, default="uz")
+    cashback_balance = Column(Integer, default=0, nullable=False)
+    last_cart_reminder_sent = Column(DateTime(timezone=True), nullable=True)
     first_seen = Column(DateTime(timezone=True), default=utcnow)
     last_seen = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     blocked_bot = Column(Boolean, default=False, nullable=False)
@@ -115,6 +117,8 @@ class Order(Base):
     status = Column(String(50), default="new", nullable=False)  # new, accepted, cancelled
     promo_code = Column(String(50), nullable=True)
     discount_amount = Column(Integer, default=0, nullable=False)
+    cashback_used = Column(Integer, default=0, nullable=False)
+    cargo_stage = Column(String(50), default="china_warehouse", nullable=False)  # china_warehouse, in_transit_border, customs_clearance, tashkent_hub, delivering
     tracking_code = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 

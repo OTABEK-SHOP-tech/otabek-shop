@@ -17,6 +17,26 @@ def format_price(price: int) -> str:
     return f"{formatted} so'm"
 
 
+CARGO_STAGE_NAMES = {
+    "china_warehouse": "🇨🇳 Xitoy omborida",
+    "in_transit_border": "🚛 Xorgos chegarasida",
+    "customs_clearance": "🛃 Bojxona nazoratida",
+    "tashkent_hub": "📍 Toshkent omborida",
+    "delivering": "🛍 Yetkazilmoqda",
+}
+
+
+def format_cargo_stage(stage: Optional[str]) -> str:
+    return CARGO_STAGE_NAMES.get(stage or "china_warehouse", "🇨🇳 Xitoy omborida")
+
+
+def mask_customer_name(name: Optional[str]) -> str:
+    clean = (name or "Mijoz").strip()
+    if len(clean) <= 2:
+        return clean[0] + "***" if len(clean) >= 1 else "M***"
+    return clean[0] + "*" * min(5, len(clean) - 2) + clean[-1]
+
+
 def calculate_cargo(weight_grams: Optional[int], rate_per_100g: int = 12000) -> int:
     """
     Calculate cargo estimate from weight: ceil(weight / 100) * rate_per_100g.

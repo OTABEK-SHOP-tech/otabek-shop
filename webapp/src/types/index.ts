@@ -63,8 +63,18 @@ export interface Order {
   formatted_total: string;
   estimated_cargo: number;
   formatted_cargo: string;
+  cashback_used?: number;
+  formatted_cashback_used?: string;
+  cargo_stage?: string;
+  formatted_cargo_stage?: string;
   status: 'new' | 'accepted' | 'cancelled';
   created_at: string;
+}
+
+export interface UserCashback {
+  cashback_balance: number;
+  formatted_cashback_balance: string;
+  max_order_cashback_percent: number;
 }
 
 export interface Review {

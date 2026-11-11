@@ -4,13 +4,32 @@ from sqlalchemy import select, delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import get_current_user, TelegramUser
-from api.schemas import OrderCreate, OrderOut
-from api.services.formatters import format_price, calculate_cargo
+from api.schemas import OrderCreate, OrderOut, UserMeOut
+from api.services.formatters import format_price, calculate_cargo, format_cargo_stage
 from bot.services.order_notifier import notify_new_order
-from db.models import Order, CartItem, Product, Setting
+from db.models import Order, CartItem, Product, Setting, User
 from db.session import get_db
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+@router.get("/me/cashback", response_model=UserMeOut)
+async def get_my_cashback(
+    user: TelegramUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(User).where(User.telegram_id == user.id))
+    db_user = res.scalars().first()
+    bal = db_user.cashback_balance if db_user else 0
+    name = db_user.name if db_user else user.first_name
+    return UserMeOut(
+        telegram_id=user.id,
+        name=name,
+        username=user.username,
+        cashback_balance=bal,
+        formatted_cashback_balance=format_price(bal),
+        max_order_cashback_percent=20,
+    )
 
 
 @router.post("", response_model=OrderOut)
@@ -68,6 +87,19 @@ async def create_order(
             if w:
                 total_weight += int(w) * int(it.get("qty", 1))
 
+    # Apply cashback if requested (max 20% of total)
+    res_user = await db.execute(select(User).where(User.telegram_id == user.id))
+    db_user = res_user.scalars().first()
+    user_cashback = db_user.cashback_balance if db_user else 0
+
+    applied_cashback = 0
+    if payload.use_cashback and payload.use_cashback > 0:
+        max_allowed = int(total * 0.20)
+        applied_cashback = min(payload.use_cashback, user_cashback, max_allowed)
+        if applied_cashback > 0 and db_user:
+            db_user.cashback_balance -= applied_cashback
+            total = max(0, total - applied_cashback)
+
     estimated_cargo = calculate_cargo(total_weight, cargo_rate)
 
     customer_name = payload.customer_name or f"{user.first_name} {user.last_name or ''}".strip() or "Mijoz"
@@ -81,6 +113,8 @@ async def create_order(
         total=total,
         estimated_cargo=estimated_cargo,
         status="new",
+        cashback_used=applied_cashback,
+        cargo_stage="china_warehouse",
     )
     db.add(new_order)
     await db.flush()
@@ -113,6 +147,10 @@ async def create_order(
         estimated_cargo=new_order.estimated_cargo,
         formatted_cargo=format_price(new_order.estimated_cargo),
         status=new_order.status,
+        cashback_used=new_order.cashback_used,
+        formatted_cashback_used=format_price(new_order.cashback_used),
+        cargo_stage=new_order.cargo_stage,
+        formatted_cargo_stage=format_cargo_stage(new_order.cargo_stage),
         created_at=new_order.created_at,
     )
 
@@ -138,6 +176,10 @@ async def list_user_orders(
             estimated_cargo=o.estimated_cargo,
             formatted_cargo=format_price(o.estimated_cargo),
             status=o.status,
+            cashback_used=o.cashback_used,
+            formatted_cashback_used=format_price(o.cashback_used),
+            cargo_stage=o.cargo_stage,
+            formatted_cargo_stage=format_cargo_stage(o.cargo_stage),
             created_at=o.created_at,
         )
         for o in orders

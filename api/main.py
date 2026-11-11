@@ -27,6 +27,7 @@ from bot.bot import setup_routers, setup_bot_commands, notify_admins_of_error
 from bot.loader import bot, dp
 from bot.runtime import BotRuntime
 from bot.services.contest_scheduler import run_contest_scheduler
+from bot.services.cart_recovery import run_cart_recovery_scheduler
 from db.generate_images import generate_demo_images
 from db.seed import seed_database
 from db.session import init_db, engine
@@ -40,6 +41,7 @@ logger = logging.getLogger("moonlight_shop")
 
 bot_polling_task = None
 contest_scheduler_task = None
+cart_recovery_task = None
 bot_runtime = BotRuntime(bot, dp, mode="polling" if settings.BOT_POLLING_ENABLED else "disabled")
 
 
@@ -64,7 +66,7 @@ async def lifespan(app: FastAPI):
         )
 
     # 2. Start Bot Polling and Contest Scheduler if configured
-    global bot_polling_task, contest_scheduler_task
+    global bot_polling_task, contest_scheduler_task, cart_recovery_task
     if bot and dp and settings.BOT_POLLING_ENABLED:
         if not dp.sub_routers:
             setup_routers(dp)
@@ -72,12 +74,19 @@ async def lifespan(app: FastAPI):
         await bot_runtime.start()
         bot_polling_task = bot_runtime.task
         contest_scheduler_task = asyncio.create_task(run_contest_scheduler(bot))
+        cart_recovery_task = asyncio.create_task(run_cart_recovery_scheduler(bot))
     else:
         logger.info("Bot token not configured or mock mode. Skipping bot polling.")
 
     try:
         yield
     finally:
+        if cart_recovery_task:
+            cart_recovery_task.cancel()
+            try:
+                await cart_recovery_task
+            except asyncio.CancelledError:
+                pass
         if contest_scheduler_task:
             contest_scheduler_task.cancel()
             try:

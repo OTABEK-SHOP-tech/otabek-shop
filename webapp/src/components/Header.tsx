@@ -1,8 +1,9 @@
 import React from 'react';
-import { Search, Globe, Sparkles } from 'lucide-react';
+import { Search, Globe, Sparkles, Smartphone } from 'lucide-react';
 import { PetalCanvas } from './PetalCanvas';
 import { SakuraBranchTopRight } from './SakuraBranches';
 import { Language, translations } from '../i18n';
+import { addToHomeScreen, haptic, playBoutiqueSound } from '../utils/telegram';
 
 interface HeaderProps {
   lang: Language;
@@ -48,15 +49,31 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Language Pill */}
-        <button
-          onClick={cycleLanguage}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 dark:bg-sakura-darkcardsoft/90 backdrop-blur-md border border-sakura-pink/40 text-xs font-bold text-sakura-plum dark:text-sakura-blush shadow-sm active:scale-95 transition-transform"
-          title="Switch Language"
-        >
-          <Globe className="w-3.5 h-3.5 text-sakura-rose" />
-          <span className="uppercase">{lang}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Add to Home Screen Button */}
+          <button
+            onClick={() => {
+              haptic.impact('light');
+              playBoutiqueSound('chime');
+              addToHomeScreen();
+            }}
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-full bg-white/80 dark:bg-sakura-darkcardsoft/90 backdrop-blur-md border border-sakura-pink/40 text-[11px] font-bold text-sakura-plum dark:text-sakura-blush shadow-sm active:scale-95 transition-transform"
+            title="Telefonga o'rnatish"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-sakura-rose" />
+            <span className="hidden sm:inline">O'rnatish</span>
+          </button>
+
+          {/* Language Pill */}
+          <button
+            onClick={cycleLanguage}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 dark:bg-sakura-darkcardsoft/90 backdrop-blur-md border border-sakura-pink/40 text-xs font-bold text-sakura-plum dark:text-sakura-blush shadow-sm active:scale-95 transition-transform"
+            title="Switch Language"
+          >
+            <Globe className="w-3.5 h-3.5 text-sakura-rose" />
+            <span className="uppercase">{lang}</span>
+          </button>
+        </div>
       </div>
 
       {/* Search Input Bar */}

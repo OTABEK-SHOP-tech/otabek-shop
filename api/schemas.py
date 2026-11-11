@@ -109,6 +109,7 @@ class OrderCreate(BaseModel):
     customer_name: Optional[str] = None
     customer_username: Optional[str] = None
     items: Optional[List[Dict[str, Any]]] = None  # If client provides snapshot, or default to current cart
+    use_cashback: Optional[int] = Field(default=0, ge=0)
 
 
 class OrderOut(BaseModel):
@@ -122,7 +123,21 @@ class OrderOut(BaseModel):
     estimated_cargo: int
     formatted_cargo: str = ""
     status: str  # new, accepted, cancelled
+    cashback_used: int = 0
+    formatted_cashback_used: str = ""
+    cargo_stage: str = "china_warehouse"
+    formatted_cargo_stage: str = ""
     created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserMeOut(BaseModel):
+    telegram_id: int
+    name: str
+    username: Optional[str] = None
+    cashback_balance: int = 0
+    formatted_cashback_balance: str = ""
+    max_order_cashback_percent: int = 20
     model_config = ConfigDict(from_attributes=True)
 
 

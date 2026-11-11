@@ -31,8 +31,26 @@ async def handle_order_accept(callback: CallbackQuery):
             return
 
         order.status = "accepted"
+
+        # Feature 24: Credit 2% cashback to customer's bot balance
+        earned_cashback = int(order.total * 0.02)
+        res_u = await session.execute(select(User).where(User.telegram_id == order.user_id))
+        u_obj = res_u.scalars().first()
+        new_balance = 0
+        if u_obj:
+            u_obj.cashback_balance += earned_cashback
+            new_balance = u_obj.cashback_balance
+
         await session.commit()
         customer_user_id = order.user_id
+        order_snapshot = order
+
+    # Feature 18: Broadcast anonymized proof to channel
+    try:
+        from bot.services.order_notifier import broadcast_live_order_proof
+        await broadcast_live_order_proof(bot, order_snapshot)
+    except Exception as e:
+        logger.warning(f"Failed to broadcast live order proof: {e}")
 
     contact_display = "+998939029799"
     async with async_session_factory() as session:
@@ -40,14 +58,20 @@ async def handle_order_accept(callback: CallbackQuery):
         if c_set and c_set.value:
             contact_display = c_set.value if (c_set.value.startswith("+") or c_set.value.isdigit()) else f"@{c_set.value.lstrip('@')}"
 
-    # Notify customer
+    # Notify customer with acceptance and cashback
     if bot and customer_user_id:
         try:
+            from api.services.formatters import format_price
+            cashback_info = (
+                f"\n\n💰 <b>Keshbek:</b> Ushbu xaridingiz uchun hisobingizga <b>+{format_price(earned_cashback)}</b> qo'shildi!\n"
+                f"Jami balansingiz: <b>{format_price(new_balance)}</b> (keyingi buyurtmada 20% gacha chegirma qilib ishlatishingiz mumkin) ✨"
+            )
             await bot.send_message(
                 chat_id=customer_user_id,
                 text=(
                     f"🌙 <b>Buyurtmangiz (#{order_id}) qabul qilindi!</b> ✅\n\n"
-                    f"Admin tez orada kargo va to'lov rekvizitlarini yuborish uchun siz bilan bog'lanadi.\n"
+                    f"Admin tez orada kargo va to'lov rekvizitlarini yuborish uchun siz bilan bog'lanadi."
+                    f"{cashback_info}\n\n"
                     f"Savollaringiz bo'lsa {contact_display} ga yozishingiz mumkin 💌"
                 ),
             )

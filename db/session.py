@@ -50,9 +50,25 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 def _add_missing_columns(sync_conn) -> None:
     # create_all never alters existing tables; add columns introduced after the first deploy.
-    existing = {col["name"] for col in inspect(sync_conn).get_columns("contests")}
-    if "extra_prizes" not in existing:
-        sync_conn.execute(text("ALTER TABLE contests ADD COLUMN extra_prizes JSON"))
+    insp = inspect(sync_conn)
+    if insp.has_table("contests"):
+        existing_contests = {col["name"] for col in insp.get_columns("contests")}
+        if "extra_prizes" not in existing_contests:
+            sync_conn.execute(text("ALTER TABLE contests ADD COLUMN extra_prizes JSON"))
+
+    if insp.has_table("users"):
+        existing_users = {col["name"] for col in insp.get_columns("users")}
+        if "cashback_balance" not in existing_users:
+            sync_conn.execute(text("ALTER TABLE users ADD COLUMN cashback_balance INTEGER DEFAULT 0 NOT NULL"))
+        if "last_cart_reminder_sent" not in existing_users:
+            sync_conn.execute(text("ALTER TABLE users ADD COLUMN last_cart_reminder_sent TIMESTAMP WITH TIME ZONE NULL" if sync_conn.dialect.name == "postgresql" else "ALTER TABLE users ADD COLUMN last_cart_reminder_sent DATETIME NULL"))
+
+    if insp.has_table("orders"):
+        existing_orders = {col["name"] for col in insp.get_columns("orders")}
+        if "cashback_used" not in existing_orders:
+            sync_conn.execute(text("ALTER TABLE orders ADD COLUMN cashback_used INTEGER DEFAULT 0 NOT NULL"))
+        if "cargo_stage" not in existing_orders:
+            sync_conn.execute(text("ALTER TABLE orders ADD COLUMN cargo_stage VARCHAR(50) DEFAULT 'china_warehouse' NOT NULL"))
 
 
 async def init_db() -> None:
