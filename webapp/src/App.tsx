@@ -31,8 +31,8 @@ export const App: React.FC = () => {
     delivery_scope: "O'zbekiston bo'ylab",
     payment_terms: "100% oldindan to'lov",
     location: 'Toshkent',
-    contact_username: 'fkhrdnvvvva',
-    channel_url: 'https://t.me/sakuraaa_chinese_shop',
+    contact_username: '+998939029799',
+    channel_url: 'https://t.me/moonlight_chinese_shop',
     has_linked_channel: false,
     welcome_text: 'Moonlight Chinese Shop ga xush kelibsiz! 🌸',
   });
@@ -75,10 +75,10 @@ export const App: React.FC = () => {
       }
     } else if (rawInitData === 'dev_browser_mode') {
       setTelegramUser({
-        id: 12345678,
-        first_name: 'Gulmira',
+        id: 8643984824,
+        first_name: 'Otabek',
         last_name: 'Admin',
-        username: 'fkhrdnvvvva',
+        username: 'obidjonovic2',
         language_code: 'uz',
       });
     }

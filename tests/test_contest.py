@@ -29,7 +29,7 @@ def create_mock_bot(member_status_dict=None):
     """
     bot = AsyncMock()
     bot_me = MagicMock()
-    bot_me.username = "sakuraaa_chinese_shop_bot"
+    bot_me.username = "moonlight_chinese_bot"
     bot.get_me.return_value = bot_me
 
     status_map = member_status_dict or {}
@@ -153,7 +153,7 @@ async def test_03_already_subscribed_user_when_only_new_is_on(test_db_session):
             bot=bot,
             user_id=invitee_id,
             contest_id=contest.id,
-            bot_username="sakura_bot",
+            bot_username="moonlight_chinese_bot",
         )
         assert confirm_res["status"] == "was_member_before"
 
@@ -194,7 +194,7 @@ async def test_04_not_subscribed_then_subscribe_tasdiqlash(test_db_session):
             bot=bot,
             user_id=invitee_id,
             contest_id=contest.id,
-            bot_username="sakura_bot",
+            bot_username="moonlight_chinese_bot",
         )
         assert confirm_1["status"] == "not_subscribed"
 
@@ -213,7 +213,7 @@ async def test_04_not_subscribed_then_subscribe_tasdiqlash(test_db_session):
             bot=bot_subscribed,
             user_id=invitee_id,
             contest_id=contest.id,
-            bot_username="sakura_bot",
+            bot_username="moonlight_chinese_bot",
         )
         assert confirm_2["status"] == "success"
         assert confirm_2["is_newly_confirmed"] is True
@@ -252,13 +252,13 @@ async def test_05_double_tasdiqlash_is_idempotent(test_db_session):
 
         # First confirm
         contest_service._confirm_throttle[invitee_id] = 0.0
-        c1 = await confirm_referral_action(session, bot, invitee_id, contest.id, "sakura_bot")
+        c1 = await confirm_referral_action(session, bot, invitee_id, contest.id, "moonlight_chinese_bot")
         assert c1["status"] == "success"
         assert c1["is_newly_confirmed"] is True
 
         # Second confirm
         contest_service._confirm_throttle[invitee_id] = 0.0
-        c2 = await confirm_referral_action(session, bot, invitee_id, contest.id, "sakura_bot")
+        c2 = await confirm_referral_action(session, bot, invitee_id, contest.id, "moonlight_chinese_bot")
         assert c2["status"] == "success"
         assert c2["is_newly_confirmed"] is False  # Idempotent!
 
@@ -335,7 +335,7 @@ async def test_07_leaving_channel_revokes_and_rejoining_reconfirms(test_db_sessi
         bot_mem = create_mock_bot({invitee_id: "member"})
         from bot.services import contest_service
         contest_service._confirm_throttle[invitee_id] = 0.0
-        await confirm_referral_action(session, bot_mem, invitee_id, contest.id, "sakura_bot")
+        await confirm_referral_action(session, bot_mem, invitee_id, contest.id, "moonlight_chinese_bot")
 
         # Confirmed: score 1
         b1 = await compute_leaderboard(session, contest.id)
@@ -350,7 +350,7 @@ async def test_07_leaving_channel_revokes_and_rejoining_reconfirms(test_db_sessi
 
         # Customer rejoins channel and presses Tasdiqlash
         contest_service._confirm_throttle[invitee_id] = 0.0
-        c_re = await confirm_referral_action(session, bot_mem, invitee_id, contest.id, "sakura_bot")
+        c_re = await confirm_referral_action(session, bot_mem, invitee_id, contest.id, "moonlight_chinese_bot")
         assert c_re["status"] == "success"
         assert c_re["is_newly_confirmed"] is True
 

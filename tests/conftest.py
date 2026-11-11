@@ -33,7 +33,7 @@ settings.OWNER_SETUP_CODE = "test_owner_secret_token_123"
 def generate_test_init_data(
     user_id: int = 12345678,
     first_name: str = "TestUser",
-    username: str = "test_sakura",
+    username: str = "test_moonlight",
     auth_date_offset: int = 0,
     tampered: bool = False,
     secret_token: str = TEST_BOT_TOKEN,
@@ -83,7 +83,7 @@ async def test_db_session():
             Setting(key="cargo_rate", value="12000"),
             Setting(key="delivery_days", value="10–15 kun"),
             Setting(key="delivery_scope", value="O'zbekiston bo'ylab"),
-            Setting(key="contact_username", value="fkhrdnvvvva"),
+            Setting(key="contact_username", value="+998939029799"),
             Setting(key="channel_id", value=""),
             Setting(key="owner_claimed_at", value=""),
             Category(slug="jempir", name="Jempir", emoji="🧶", sort_order=1),

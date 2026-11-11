@@ -8,7 +8,7 @@ def test_build_order_summary_content():
             "title": "Aesthetic Vintage Pushti Jempir 🌸",
             "price": 99000,
             "size": "M",
-            "color": "Sakura pushti 🌸",
+            "color": "Aesthetic pushti 🌸",
             "qty": 2,
         }
     ]
@@ -21,7 +21,7 @@ def test_build_order_summary_content():
         items=items,
         total=198000,
         estimated_cargo=48000,
-        contact_username="fkhrdnvvvva",
+        contact_username="+998939029799",
     )
 
     admin_text = summary["admin_text"]
@@ -36,6 +36,6 @@ def test_build_order_summary_content():
 
     assert "Madina" in customer_text
     assert "#42" in customer_text
-    assert "@fkhrdnvvvva" in customer_text
+    assert "+998939029799" in customer_text
     assert "copyable_block" in summary
     assert "Aesthetic Vintage Pushti Jempir" in copyable

@@ -8,7 +8,7 @@ def test_build_channel_caption_format():
         cargo_rate=12000,
         delivery_days="10–15 kun",
         delivery_scope="O'zbekiston bo'ylab",
-        contact_username="fkhrdnvvvva",
+        contact_username="+998939029799",
     )
 
     expected = (
@@ -17,7 +17,7 @@ def test_build_channel_caption_format():
         "📦 Kargo: 12.000 so'm / 100g\n"
         "⏳ 10–15 kun\n"
         "🚚 Dastavka: O'zbekiston bo'ylab\n"
-        "Buyurtma berish uchun @fkhrdnvvvva ga yozing 💌"
+        "Buyurtma berish uchun +998939029799 ga yozing 💌"
     )
     assert caption == expected
 
@@ -29,7 +29,7 @@ def test_parse_channel_post_shortcut():
         "📦 Kargo: 12.000 so'm / 100g\n"
         "⏳ 10–15 kun\n"
         "🚚 Dastavka: O'zbekiston bo'ylab\n"
-        "Buyurtma berish uchun @fkhrdnvvvva ga yozing 💌"
+        "Buyurtma berish uchun +998939029799 ga yozing 💌"
     )
 
     parsed = parse_channel_post(sample_post)

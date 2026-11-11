@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Top row: Brand & Language Toggle */}
       <div className="relative z-20 flex items-center justify-between mb-3">
         <div className="flex items-center space-x-2">
-          <span className="text-2xl filter drop-shadow-sm animate-pulse">🌸</span>
+          <span className="text-2xl filter drop-shadow-sm animate-pulse">🌙</span>
           <div>
             <h1 className="font-logo text-2xl sm:text-3xl font-normal text-sakura-darkrose dark:text-sakura-pink tracking-wide leading-none">
               {t.shopName}

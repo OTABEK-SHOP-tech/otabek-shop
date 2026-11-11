@@ -10,7 +10,7 @@ from api.config import settings
 from db.models import Admin, Setting
 
 # The default that ships in the public repo; it must never grant ownership.
-DEFAULT_SETUP_CODE = "gulmira_owner_secret_998877_setup"
+DEFAULT_SETUP_CODE = "moonlight_public_insecure_code_do_not_use"
 MIN_SETUP_CODE_LENGTH = 16
 INVITE_SETTING_KEY = "owner_invite_code"
 

@@ -46,8 +46,8 @@ def main():
 
     admin_init_data = generate_test_init_data(
         user_id=12345678,
-        first_name="Sakura Owner",
-        username="fkhrdnvvvva",
+        first_name="Moonlight Owner",
+        username="obidjonovic2",
         secret_token=TEST_BOT_TOKEN,
     )
 
@@ -67,9 +67,9 @@ def main():
                     initDataUnsafe: {{
                         user: {{
                             id: 12345678,
-                            first_name: "Sakura",
+                            first_name: "Moonlight",
                             last_name: "Owner",
-                            username: "fkhrdnvvvva",
+                            username: "obidjonovic2",
                             language_code: "uz"
                         }}
                     }},

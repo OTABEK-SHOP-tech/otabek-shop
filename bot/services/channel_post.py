@@ -33,7 +33,7 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
         cargo_rate = int(settings_map.get("cargo_rate", 12000))
         delivery_days = settings_map.get("delivery_days", "10–15 kun")
         delivery_scope = settings_map.get("delivery_scope", "O'zbekiston bo'ylab")
-        contact_username = settings_map.get("contact_username", "fkhrdnvvvva")
+        contact_username = settings_map.get("contact_username", "+998939029799")
 
         caption = build_channel_caption(
             category_slug=product.category,

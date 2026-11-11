@@ -36,7 +36,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("gulmira_shop")
+logger = logging.getLogger("moonlight_shop")
 
 bot_polling_task = None
 contest_scheduler_task = None
@@ -45,9 +45,10 @@ bot_runtime = BotRuntime(bot, dp, mode="polling" if settings.BOT_POLLING_ENABLED
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Warn before seeding an ephemeral SQLite database on Render.
+    # Fail before seeding an ephemeral SQLite database on Render.
     if os.getenv("RENDER") == "true" and engine.dialect.name != "postgresql":
-        logger.warning("Database backend: %s on Render. For persistent production data, configure a PostgreSQL/Neon DATABASE_URL.", engine.dialect.name)
+        logger.error("Database backend: %s; Render requires DATABASE_URL pointing to PostgreSQL", engine.dialect.name)
+        raise RuntimeError("Configure a Neon/PostgreSQL DATABASE_URL in Render Environment")
     # 1. Initialize DB and seed demo data
     logger.info("Initializing database...")
     await init_db()

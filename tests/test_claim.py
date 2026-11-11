@@ -10,7 +10,7 @@ async def test_claim_link_works_once_and_only_once(test_db_session):
     async_session = test_db_session
 
     user_id = 77712345
-    full_name = "Sakura Owner"
+    full_name = "Moonlight Owner"
     claim_code = settings.OWNER_SETUP_CODE
 
     # 1. First claim attempt with correct code

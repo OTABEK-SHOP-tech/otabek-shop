@@ -40,10 +40,10 @@ def verify_telegram_init_data(init_data_raw: str, bot_token: str, max_age_second
     if settings.DEV_BROWSER_MODE and init_data_raw in ("dev_browser_mode", "browser_dev_mode"):
         return {
             "user": json.dumps({
-                "id": 12345678,
-                "first_name": "Gulmira",
+                "id": 8643984824,
+                "first_name": "Otabek",
                 "last_name": "Admin",
-                "username": "fkhrdnvvvva",
+                "username": "obidjonovic2",
                 "language_code": "uz"
             }),
             "auth_date": str(int(time.time())),

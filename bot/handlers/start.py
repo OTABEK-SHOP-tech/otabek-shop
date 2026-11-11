@@ -183,27 +183,38 @@ async def handle_start(message: Message, command: CommandObject):
                     desc_text = f"\n\n{product.description}" if product.description else ""
                     stock_badge = "" if product.in_stock else "\n\n❌ <b>Sotildi (Hozirda mavjud emas)</b>"
 
+                    contact_val = "+998939029799"
+                    try:
+                        c_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
+                        c_row = c_s.scalars().first()
+                        if c_row and c_row.value:
+                            contact_val = c_row.value.strip()
+                    except Exception:
+                        pass
+                    contact_display = contact_val if (contact_val.startswith("+") or contact_val.isdigit()) else f"@{contact_val.lstrip('@')}"
+                    contact_link = f"https://t.me/{contact_val}" if contact_val.startswith("+") else f"https://t.me/{contact_val.lstrip('@')}"
+
                     text = (
-                        f"🌸 <b>{escape(str(product.title))}</b>\n"
+                        f"🌙 <b>{escape(str(product.title))}</b>\n"
                         f"💰 <b>Narxi:</b> {format_price(product.price)}\n"
                         f"📦 <b>Kargo:</b> ~{format_price(cargo)}"
                         f"{desc_text}"
                         f"{stock_badge}\n\n"
-                        f"💌 Buyurtma berish uchun @fkhrdnvvvva ga yozing"
+                        f"💌 Buyurtma berish uchun {contact_display} ga yozing"
                     )
 
                     markup = InlineKeyboardMarkup(
                         inline_keyboard=[
                             [
                                 InlineKeyboardButton(
-                                    text="🌸 Do'konda ochish",
+                                    text="🛍️ Do'konda ochish",
                                     web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?product={product.id}"),
                                 )
                             ],
                             [
                                 InlineKeyboardButton(
                                     text="💌 Admin bilan bog'lanish",
-                                    url="https://t.me/fkhrdnvvvva",
+                                    url=contact_link,
                                 )
                             ]
                         ]
@@ -229,7 +240,7 @@ async def handle_start(message: Message, command: CommandObject):
     # 4. Standard welcome message
     banner_path = Path(settings.MEDIA_CACHE_DIR) / "bot_banner.png"
     channel_link = "https://t.me/moonlight_chinese_shop"
-    contact_user = "fkhrdnvvvva"
+    contact_user = "+998939029799"
 
     try:
         async with async_session_factory() as session:
@@ -241,16 +252,19 @@ async def handle_start(message: Message, command: CommandObject):
             ct_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
             ct_obj = ct_s.scalars().first()
             if ct_obj and ct_obj.value:
-                contact_user = ct_obj.value.lstrip("@")
+                contact_user = ct_obj.value.strip()
     except Exception:
         pass
+
+    contact_display = contact_user if (contact_user.startswith("+") or contact_user.isdigit()) else f"@{contact_user.lstrip('@')}"
+    contact_link = f"https://t.me/{contact_user}" if contact_user.startswith("+") else f"https://t.me/{contact_user.lstrip('@')}"
 
     greeting_text = (
         "🌙 <b>Moonlight Chinese Shop ga xush kelibsiz!</b> ✨\n\n"
         "Xitoy brendlari va aesthetic kiyimlar, jempirlar, pariklar va nozik aksessuarlar do'koni 🛍️\n\n"
         "🛍️ <b>Do'konni ochish</b> tugmasini bosib, barcha go'zal mahsulotlarni qulay Mini App orqali tomosha qiling va savatga qo'shing!\n\n"
         "📍 Toshkent | 🚚 O'zbekiston bo'ylab yetkazib berish\n"
-        f"💌 Savollar va buyurtma uchun: @{contact_user}"
+        f"💌 Savollar va buyurtma uchun: {contact_display}"
     )
 
     markup = InlineKeyboardMarkup(
@@ -258,7 +272,7 @@ async def handle_start(message: Message, command: CommandObject):
             [make_webapp_inline_btn("🛍️ Do'konni ochish", settings.WEBAPP_URL)],
             [
                 InlineKeyboardButton(text="📢 Rasmiy kanal", url=channel_link),
-                InlineKeyboardButton(text="💌 Bog'lanish", url=f"https://t.me/{contact_user}"),
+                InlineKeyboardButton(text="💌 Bog'lanish", url=contact_link),
             ]
         ]
     )
@@ -327,11 +341,22 @@ async def handle_reviews(message: Message):
 
 @router.message(F.text == "💌 Admin bilan bog'lanish")
 async def handle_contact(message: Message):
+    contact_val = "+998939029799"
+    try:
+        async with async_session_factory() as session:
+            ct_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
+            ct_obj = ct_s.scalars().first()
+            if ct_obj and ct_obj.value:
+                contact_val = ct_obj.value.strip()
+    except Exception:
+        pass
+    contact_display = contact_val if (contact_val.startswith("+") or contact_val.isdigit()) else f"@{contact_val.lstrip('@')}"
+    contact_link = f"https://t.me/{contact_val}" if contact_val.startswith("+") else f"https://t.me/{contact_val.lstrip('@')}"
     await message.answer(
-        "🌸 Har qanday savol va buyurtma uchun to'g'ridan-to'g'ri egamiz @fkhrdnvvvva ga yozishingiz mumkin! 💌",
+        f"🌙 Har qanday savol va buyurtma uchun to'g'ridan-to'g'ri {contact_display} ga yozishingiz mumkin! 💌",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="💌 @fkhrdnvvvva ga yozish", url="https://t.me/fkhrdnvvvva")]
+                [InlineKeyboardButton(text=f"💌 {contact_display} ga yozish", url=contact_link)]
             ]
         ),
     )

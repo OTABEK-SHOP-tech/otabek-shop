@@ -35,7 +35,7 @@ def main():
             from sqlalchemy import select
             res = await session.execute(select(Admin).where(Admin.telegram_id == admin_id))
             if not res.scalars().first():
-                session.add(Admin(telegram_id=admin_id, name="Sakura Owner", role="owner"))
+                session.add(Admin(telegram_id=admin_id, name="Moonlight Owner", role="owner"))
                 await session.commit()
     asyncio.run(prepare_admin())
 
@@ -65,8 +65,8 @@ def main():
     # Generate valid admin initData for tests
     admin_init_data = generate_test_init_data(
         user_id=12345678,
-        first_name="Sakura Owner",
-        username="fkhrdnvvvva",
+        first_name="Moonlight Owner",
+        username="obidjonovic2",
     )
 
     with sync_playwright() as p:
@@ -88,9 +88,9 @@ def main():
                     initDataUnsafe: {{
                         user: {{
                             id: 12345678,
-                            first_name: "Sakura",
+                            first_name: "Moonlight",
                             last_name: "Owner",
-                            username: "fkhrdnvvvva",
+                            username: "obidjonovic2",
                             language_code: "uz"
                         }}
                     }},
@@ -145,7 +145,7 @@ def main():
         import urllib.request
         req = urllib.request.Request(
             f"{BASE_URL}/api/cart",
-            data=json.dumps({"product_id": 1, "size": "M", "color": "Sakura pushti 🌸", "qty": 1}).encode("utf-8"),
+            data=json.dumps({"product_id": 1, "size": "M", "color": "Moonlight pushti ✨", "qty": 1}).encode("utf-8"),
             headers={"Content-Type": "application/json", "X-Telegram-Init-Data": admin_init_data},
             method="POST",
         )

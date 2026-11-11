@@ -50,7 +50,7 @@ OWNER_1, OWNER_2, PLAIN_ADMIN = 111, 222, 333
 
 def channel_bot(member_by_user):
     tg_bot = AsyncMock()
-    tg_bot.get_chat.return_value = SimpleNamespace(id=CHANNEL_ID, type="channel", title="Sakura shop")
+    tg_bot.get_chat.return_value = SimpleNamespace(id=CHANNEL_ID, type="channel", title="Moonlight Chinese Shop")
     tg_bot.get_me.return_value = SimpleNamespace(id=BOT_ID)
 
     async def get_chat_member(chat_id, user_id):
@@ -68,8 +68,8 @@ async def saved_channel_id(session):
 
 async def seed_admins(session):
     session.add_all([
-        Admin(telegram_id=OWNER_1, name="bek", role="owner"),
-        Admin(telegram_id=OWNER_2, name="Faxriddinova", role="owner"),
+        Admin(telegram_id=OWNER_1, name="Otabek", role="owner"),
+        Admin(telegram_id=OWNER_2, name="Gulmira", role="owner"),
         Admin(telegram_id=PLAIN_ADMIN, name="helper", role="admin"),
     ])
     await session.commit()
@@ -92,10 +92,10 @@ async def test_owner_links_channel_by_username(test_db_session):
         OWNER_1: SimpleNamespace(status="administrator"),
     })
     async with test_db_session() as session:
-        linked, reply = await link_channel_by_username(session, tg_bot, OWNER_1, "https://t.me/sakuraaa_chinese_shop")
+        linked, reply = await link_channel_by_username(session, tg_bot, OWNER_1, "https://t.me/moonlight_chinese_shop")
         assert linked, reply
         assert await saved_channel_id(session) == str(CHANNEL_ID)
-    tg_bot.get_chat.assert_awaited_once_with("@sakuraaa_chinese_shop")
+    tg_bot.get_chat.assert_awaited_once_with("@moonlight_chinese_shop")
 
 
 @pytest.mark.asyncio
@@ -107,7 +107,7 @@ async def test_owner_links_channel_by_username(test_db_session):
 async def test_link_refused_without_admin_rights(test_db_session, bot_member, user_member):
     tg_bot = channel_bot({BOT_ID: bot_member, OWNER_1: user_member})
     async with test_db_session() as session:
-        linked, _ = await link_channel_by_username(session, tg_bot, OWNER_1, "@sakuraaa_chinese_shop")
+        linked, _ = await link_channel_by_username(session, tg_bot, OWNER_1, "@moonlight_chinese_shop")
         assert not linked
         assert await saved_channel_id(session) == ""
 
