@@ -133,9 +133,10 @@ export const HomePage: React.FC<HomePageProps> = ({
       ) : (
         /* 2-Column Product Grid */
         <div className="grid grid-cols-2 gap-3 px-4">
-          {filteredProducts.map((product) => (
+          {filteredProducts.map((product, idx) => (
             <ProductCard
-              key={product.id}
+              key={`${selectedCategory || 'all'}-${product.id}`}
+              index={idx}
               product={product}
               isWishlisted={wishlistIds.includes(product.id)}
               onToggleWishlist={onToggleWishlist}

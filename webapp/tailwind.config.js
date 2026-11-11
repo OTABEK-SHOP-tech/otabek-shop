@@ -36,6 +36,7 @@ export default {
         'petal-fall': 'fall 8s linear infinite',
         'heart-pop': 'heartPop 0.35s ease-out',
         'scale-in': 'scaleIn 0.2s ease-out',
+        'app-launch': 'appLaunch 360ms cubic-bezier(0.16, 1, 0.3, 1) forwards',
       },
       keyframes: {
         fall: {
@@ -50,6 +51,10 @@ export default {
         scaleIn: {
           '0%': { transform: 'scale(0.95)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        appLaunch: {
+          '0%': { opacity: '0', transform: 'scale(0.98) translateZ(0)' },
+          '100%': { opacity: '1', transform: 'none' },
         },
       },
     },

@@ -30,9 +30,10 @@ export const Carousel: React.FC<CarouselProps> = ({
       </div>
 
       <div className="flex space-x-3 overflow-x-auto px-4 pb-2 no-scrollbar snap-x">
-        {products.map((product) => (
+        {products.map((product, idx) => (
           <div key={product.id} className="w-[155px] sm:w-[175px] shrink-0 snap-start">
             <ProductCard
+              index={idx}
               product={product}
               isWishlisted={wishlistIds.includes(product.id)}
               onToggleWishlist={onToggleWishlist}

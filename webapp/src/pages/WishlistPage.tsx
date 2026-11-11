@@ -49,9 +49,10 @@ export const WishlistPage: React.FC<WishlistPageProps> = ({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {wishlistedProducts.map((p) => (
+        {wishlistedProducts.map((p, idx) => (
           <ProductCard
             key={p.id}
+            index={idx}
             product={p}
             isWishlisted={true}
             onToggleWishlist={onToggleWishlist}

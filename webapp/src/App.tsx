@@ -48,6 +48,16 @@ export const App: React.FC = () => {
   const [petalsEnabled, setPetalsEnabled] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [appLaunched, setAppLaunched] = useState(false);
+
+  // Safety cleanup: dismantle launch animation class after 450ms to release GPU layer
+  // and prevent persistent containing-block trapping for position: fixed elements
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppLaunched(true);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, []);
 
   const t = translations[lang];
 
@@ -392,7 +402,16 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-sakura-cream dark:bg-sakura-darkbg text-sakura-plum dark:text-sakura-blush">
+    <div
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) {
+          setAppLaunched(true);
+        }
+      }}
+      className={`min-h-screen bg-sakura-cream dark:bg-sakura-darkbg text-sakura-plum dark:text-sakura-blush ${
+        !appLaunched ? 'animate-app-launch' : ''
+      } ${reducedMotion ? 'motion-reduce' : ''}`}
+    >
       {/* Main Top Header */}
       {!selectedProduct && (
         <Header

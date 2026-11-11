@@ -3,13 +3,17 @@ import { Heart, Sparkles, Flame } from 'lucide-react';
 import { Product } from '../types';
 import { formatPrice, getMediaUrl } from '../utils/format';
 import { haptic } from '../utils/telegram';
+import { useScrollReveal } from '../utils/useScrollReveal';
 
-interface ProductCardProps {
+export interface ProductCardProps {
   product: Product;
   isWishlisted: boolean;
   onToggleWishlist: (productId: number) => void;
   onSelect: (product: Product) => void;
   soldOutLabel: string;
+  index?: number;
+  staggerDelay?: number;
+  disabledAnimation?: boolean;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -18,7 +22,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onToggleWishlist,
   onSelect,
   soldOutLabel,
+  index = 0,
+  staggerDelay,
+  disabledAnimation = false,
 }) => {
+  const { ref, isVisible, isSettled, handleTransitionEnd } = useScrollReveal({
+    disabled: disabledAnimation,
+    threshold: 0.08,
+    rootMargin: '0px 0px -20px 0px',
+  });
+
   const handleWishlistClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     haptic.impact('medium');
@@ -32,10 +45,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const photoUrl = getMediaUrl(product.photos?.[0]);
 
+  // Stagger calculation: 65ms per card chunk in viewport (50ms - 80ms target range)
+  const calculatedDelay = staggerDelay !== undefined ? staggerDelay : (index % 4) * 65;
+
   return (
     <div
+      ref={ref}
       onClick={handleCardClick}
-      className="group relative flex flex-col bg-white/90 dark:bg-sakura-darkcard/90 backdrop-blur-md rounded-3xl p-2.5 shadow-sakura-sm hover:shadow-sakura border border-sakura-pink/20 transition-all duration-300 active:scale-[0.98] cursor-pointer overflow-hidden"
+      onTransitionEnd={handleTransitionEnd}
+      style={{
+        transitionDelay: isVisible && !isSettled ? `${calculatedDelay}ms` : '0ms',
+      }}
+      className={`product-card-reveal ${isVisible ? 'is-visible' : ''} ${
+        isSettled ? 'is-settled' : ''
+      } group relative flex flex-col bg-white/90 dark:bg-sakura-darkcard/90 backdrop-blur-md rounded-3xl p-2.5 shadow-sakura-sm hover:shadow-sakura border border-sakura-pink/20 cursor-pointer overflow-hidden`}
     >
       {/* Product Image Container */}
       <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-sakura-blush/40 dark:bg-sakura-darkcardsoft">
