@@ -1,29 +1,47 @@
 version: '3.8'
 
 services:
-  gulmira-shop:
+  postgres:
+    image: postgres:16-alpine
+    container_name: moonlight_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: moonlight_user
+      POSTGRES_PASSWORD: moonlight_password_2026
+      POSTGRES_DB: moonlight_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - moonlight_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moonlight_user -d moonlight_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: gulmira_shop_app
+    container_name: moonlight_shop_app
     restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8001:8001"
+    env_file:
+      - .env
     environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-      - OWNER_SETUP_CODE=${OWNER_SETUP_CODE}
-      - WEBAPP_URL=${WEBAPP_URL}
-      - DATABASE_URL=sqlite+aiosqlite:////app/data/gulmira_shop.db
-      - DEV_ADMIN_ID=${DEV_ADMIN_ID}
+      - DATABASE_URL=postgresql+asyncpg://moonlight_user:moonlight_password_2026@postgres:5432/moonlight_db
       - HOST=0.0.0.0
       - PORT=8001
       - MEDIA_CACHE_DIR=/app/media_cache
     volumes:
-      - gulmira_data:/app/data
-      - gulmira_media:/app/media_cache
+      - moonlight_media:/app/media_cache
 
 volumes:
-  gulmira_data:
+  moonlight_pgdata:
     driver: local
-  gulmira_media:
+  moonlight_media:
     driver: local

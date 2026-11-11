@@ -31,13 +31,14 @@ async def setup_bot_commands(bot: Bot):
     ]
     try:
         await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
-        # Set Menu Button to open Mini App directly
-        await bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(
-                text="🌸 Do'kon",
-                web_app=WebAppInfo(url=settings.WEBAPP_URL),
+        # Set Menu Button to open Mini App directly if HTTPS is available
+        if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
+            await bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="🛍️ Do'kon",
+                    web_app=WebAppInfo(url=settings.WEBAPP_URL),
+                )
             )
-        )
     except Exception as e:
         logger.warning(f"Failed to configure bot commands or menu button: {e}")
 

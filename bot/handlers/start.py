@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from api.config import settings
 from api.services.formatters import format_price, calculate_cargo
-from bot.keyboards.reply import get_main_reply_keyboard
+from bot.keyboards.reply import get_main_reply_keyboard, make_webapp_inline_btn
 from db.models import User, Admin, Setting, Product, Review
 from db.session import async_session_factory
 
@@ -27,29 +27,40 @@ async def handle_start(message: Message, command: CommandObject):
     # 1. Update or create user in DB, tracking whether they existed before
     is_new_user = False
     async with async_session_factory() as session:
+        now = datetime.now(timezone.utc)
         u_res = await session.execute(select(User).where(User.telegram_id == user_id))
         user_obj = u_res.scalars().first()
-        now = datetime.now(timezone.utc)
 
-        if not user_obj:
-            is_new_user = True
-            user_obj = User(
-                telegram_id=user_id,
-                name=full_name,
-                username=username,
-                language="uz",
-                first_seen=now,
-                last_seen=now,
-                blocked_bot=False,
-            )
-            session.add(user_obj)
-        else:
-            user_obj.name = full_name
-            user_obj.username = username
-            user_obj.last_seen = now
-            user_obj.blocked_bot = False
+        try:
+            if not user_obj:
+                is_new_user = True
+                user_obj = User(
+                    telegram_id=user_id,
+                    name=full_name,
+                    username=username,
+                    language="uz",
+                    first_seen=now,
+                    last_seen=now,
+                    blocked_bot=False,
+                )
+                session.add(user_obj)
+            else:
+                user_obj.name = full_name
+                user_obj.username = username
+                user_obj.last_seen = now
+                user_obj.blocked_bot = False
 
-        await session.commit()
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            is_new_user = False
+            u_res2 = await session.execute(select(User).where(User.telegram_id == user_id))
+            user_obj2 = u_res2.scalars().first()
+            if user_obj2:
+                user_obj2.name = full_name
+                user_obj2.username = username
+                user_obj2.last_seen = now
+                await session.commit()
 
     # Check for CONTEST direct link: /start konkurs
     if payload == "konkurs":
@@ -96,7 +107,7 @@ async def handle_start(message: Message, command: CommandObject):
                     markup = InlineKeyboardMarkup(
                         inline_keyboard=[
                             [InlineKeyboardButton(text="🎁 Konkursda qatnashish", callback_data=f"my_stats:{contest.id}")],
-                            [InlineKeyboardButton(text="🌸 Do'konni ochish", web_app=WebAppInfo(url=settings.WEBAPP_URL))],
+                            [make_webapp_inline_btn("🌸 Do'konni ochish", settings.WEBAPP_URL)],
                         ]
                     )
                     await message.answer(
@@ -244,12 +255,7 @@ async def handle_start(message: Message, command: CommandObject):
 
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🛍️ Do'konni ochish",
-                    web_app=WebAppInfo(url=settings.WEBAPP_URL),
-                )
-            ],
+            [make_webapp_inline_btn("🛍️ Do'konni ochish", settings.WEBAPP_URL)],
             [
                 InlineKeyboardButton(text="📢 Rasmiy kanal", url=channel_link),
                 InlineKeyboardButton(text="💌 Bog'lanish", url=f"https://t.me/{contact_user}"),
@@ -313,7 +319,7 @@ async def handle_reviews(message: Message):
 
         markup = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🌸 Barcha fikrlar Mini App'da", web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=reviews"))]
+                [make_webapp_inline_btn("🌸 Barcha fikrlar Mini App'da", f"{settings.WEBAPP_URL}?tab=reviews")]
             ]
         )
         await message.answer("\n".join(lines), reply_markup=markup)

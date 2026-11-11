@@ -1,6 +1,6 @@
 import os
-from typing import Optional
-from pydantic import Field
+from typing import Optional, Any
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8001)
     MEDIA_CACHE_DIR: str = Field(default="./media_cache")
+
+    @field_validator("DEV_ADMIN_ID", mode="before")
+    @classmethod
+    def parse_empty_str_to_none(cls, v: Any) -> Optional[int]:
+        if v == "" or v is None:
+            return None
+        return int(v)
 
     model_config = SettingsConfigDict(
         env_file=".env",

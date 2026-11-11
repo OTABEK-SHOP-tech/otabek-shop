@@ -17,14 +17,17 @@ def get_main_reply_keyboard(webapp_url: str = settings.WEBAPP_URL) -> ReplyKeybo
     """
     Main persistent reply keyboard for customers.
     """
+    if webapp_url and webapp_url.startswith("https://"):
+        first_btn = KeyboardButton(
+            text="🛍️ Do'konni ochish",
+            web_app=WebAppInfo(url=webapp_url),
+        )
+    else:
+        first_btn = KeyboardButton(text="🛍️ Do'konni ochish")
+
     return ReplyKeyboardMarkup(
         keyboard=[
-            [
-                KeyboardButton(
-                    text="🌸 Do'konni ochish",
-                    web_app=WebAppInfo(url=webapp_url),
-                )
-            ],
+            [first_btn],
             [
                 KeyboardButton(text=CONTEST_BUTTON_TEXT),
                 KeyboardButton(text=RATING_BUTTON_TEXT),
@@ -40,6 +43,13 @@ def get_main_reply_keyboard(webapp_url: str = settings.WEBAPP_URL) -> ReplyKeybo
         ],
         resize_keyboard=True,
     )
+
+
+def make_webapp_inline_btn(text: str, url: str) -> InlineKeyboardButton:
+    """Creates an inline button, using WebAppInfo if https, or url fallback if http."""
+    if url and url.startswith("https://"):
+        return InlineKeyboardButton(text=text, web_app=WebAppInfo(url=url))
+    return InlineKeyboardButton(text=text, url=url or "http://localhost:8001")
 
 
 def get_admin_main_keyboard() -> InlineKeyboardMarkup:
