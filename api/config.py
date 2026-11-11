@@ -6,11 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     BOT_TOKEN: str = Field(
-        default="mock_bot_token_for_tests",
+        default="9277851759:AAHjlbBoYpim8N5Xg-GCVodWaYU8Kxhq1VA",
         description="Telegram Bot API Token from @BotFather"
     )
     OWNER_SETUP_CODE: str = Field(
-        default="gulmira_owner_secret_998877_setup",
+        default="moonlight_owner_secret_998877_setup",
         description="One-time secret token for claiming shop ownership"
     )
     WEBAPP_URL: str = Field(
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         description="Disable on local API previews; use a separate bot token for local bot tests",
     )
     DATABASE_URL: str = Field(
-        default="sqlite+aiosqlite:///./gulmira_shop.db",
+        default="sqlite+aiosqlite:///./moonlight_shop.db",
         description="SQLAlchemy async database URL"
     )
     DEV_ADMIN_ID: Optional[int] = Field(

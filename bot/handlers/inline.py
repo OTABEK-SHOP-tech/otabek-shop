@@ -41,16 +41,16 @@ async def handle_inline_search(inline_query: InlineQuery):
         products = res.scalars().all()
 
     bot_info = await bot.get_me() if bot else None
-    bot_username = bot_info.username if bot_info else "sakura_shop_bot"
+    bot_username = bot_info.username if bot_info else "moonlight_chinese_bot"
 
     results = []
     for prod in products:
         cargo = calculate_cargo(prod.weight_grams)
         caption = (
-            f"🌸 <b>{escape(prod.title)}</b>\n"
+            f"🌙 <b>{escape(prod.title)}</b>\n"
             f"💰 Narxi: <b>{format_price(prod.price)}</b>\n"
             f"📦 Kargo: ~{format_price(cargo)}\n\n"
-            f"💌 Buyurtma berish uchun @fkhrdnvvvva ga yozing"
+            f"💌 Buyurtma berish uchun do'konga kiring"
         )
 
         markup = InlineKeyboardMarkup(
@@ -68,7 +68,7 @@ async def handle_inline_search(inline_query: InlineQuery):
             InlineQueryResultArticle(
                 id=str(prod.id),
                 title=f"{prod.title} — {format_price(prod.price)}",
-                description=f"#{prod.category} | {prod.description[:60] if prod.description else 'Sakura shop'}",
+                description=f"#{prod.category} | {prod.description[:60] if prod.description else 'Moonlight Chinese Shop'}",
                 input_message_content=InputTextMessageContent(
                     message_text=caption,
                     parse_mode="HTML",

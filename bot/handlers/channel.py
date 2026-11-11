@@ -49,7 +49,7 @@ async def link_channel_by_username(session: AsyncSession, tg_bot: Bot, user_id: 
     """Links a channel where the bot can post and user_id is an admin. Returns (linked, reply text)."""
     m = CHANNEL_REF_RE.fullmatch(raw.strip())
     if not m:
-        return False, "❌ Kanal @username ini yuboring (masalan: <code>@sakuraaa_chinese_shop</code>) yoki /cancel."
+        return False, "❌ Kanal @username ini yuboring (masalan: <code>@moonlight_chinese_shop</code>) yoki /cancel."
     ref = f"@{m.group(1)}"
     try:
         chat = await tg_bot.get_chat(ref)
@@ -195,7 +195,7 @@ async def handle_link_channel_prompt(callback: CallbackQuery, state: FSMContext)
     await state.set_state(ChannelLinkState.waiting_for_username)
     await callback.message.answer(
         "🔗 <b>Kanalni ulash</b>\n\n"
-        "Kanal @username ini yuboring (masalan: <code>@sakuraaa_chinese_shop</code>).\n"
+        "Kanal @username ini yuboring (masalan: <code>@moonlight_chinese_shop</code>).\n"
         "Bot kanalda post joylash huquqi bilan admin bo'lishi, siz esa kanal admini bo'lishingiz kerak.\n\n"
         "Bekor qilish: /cancel"
     )

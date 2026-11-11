@@ -87,7 +87,7 @@ async def handle_start(message: Message, command: CommandObject):
                 # Malformed, self, or invalid payloads are safely ignored and continue to regular greeting
             else:
                 contest = ref_result["contest"]
-                channel_url = ref_result.get("channel_url", "https://t.me/sakuraaa_chinese_shop")
+                channel_url = ref_result.get("channel_url", "https://t.me/moonlight_chinese_shop")
                 was_member_before = ref_result.get("was_member_before", False)
 
                 if was_member_before and contest.only_new_subscribers:
@@ -217,25 +217,42 @@ async def handle_start(message: Message, command: CommandObject):
 
     # 4. Standard welcome message
     banner_path = Path(settings.MEDIA_CACHE_DIR) / "bot_banner.png"
+    channel_link = "https://t.me/moonlight_chinese_shop"
+    contact_user = "fkhrdnvvvva"
+
+    try:
+        async with async_session_factory() as session:
+            ch_s = await session.execute(select(Setting).where(Setting.key == "channel_url"))
+            ch_obj = ch_s.scalars().first()
+            if ch_obj and ch_obj.value:
+                channel_link = ch_obj.value
+
+            ct_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
+            ct_obj = ct_s.scalars().first()
+            if ct_obj and ct_obj.value:
+                contact_user = ct_obj.value.lstrip("@")
+    except Exception:
+        pass
+
     greeting_text = (
-        "🌸 <b>Gulmira Shop ga xush kelibsiz!</b> 💗\n\n"
-        "Xitoy brendlari va aesthetic kiyimlar, jempirlar, pariklar va nozik aksessuarlar do'koni ✨\n\n"
+        "🌙 <b>Moonlight Chinese Shop ga xush kelibsiz!</b> ✨\n\n"
+        "Xitoy brendlari va aesthetic kiyimlar, jempirlar, pariklar va nozik aksessuarlar do'koni 🛍️\n\n"
         "🛍️ <b>Do'konni ochish</b> tugmasini bosib, barcha go'zal mahsulotlarni qulay Mini App orqali tomosha qiling va savatga qo'shing!\n\n"
         "📍 Toshkent | 🚚 O'zbekiston bo'ylab yetkazib berish\n"
-        "💌 Savollar va buyurtma uchun: @fkhrdnvvvva"
+        f"💌 Savollar va buyurtma uchun: @{contact_user}"
     )
 
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🌸 Do'konni ochish",
+                    text="🛍️ Do'konni ochish",
                     web_app=WebAppInfo(url=settings.WEBAPP_URL),
                 )
             ],
             [
-                InlineKeyboardButton(text="📢 Rasmiy kanal", url="https://t.me/sakuraaa_chinese_shop"),
-                InlineKeyboardButton(text="💌 Bog'lanish", url="https://t.me/fkhrdnvvvva"),
+                InlineKeyboardButton(text="📢 Rasmiy kanal", url=channel_link),
+                InlineKeyboardButton(text="💌 Bog'lanish", url=f"https://t.me/{contact_user}"),
             ]
         ]
     )
@@ -316,11 +333,21 @@ async def handle_contact(message: Message):
 
 @router.message(F.text == "📢 Kanal")
 async def handle_channel_link(message: Message):
+    channel_link = "https://t.me/moonlight_chinese_shop"
+    try:
+        async with async_session_factory() as session:
+            ch_s = await session.execute(select(Setting).where(Setting.key == "channel_url"))
+            ch_obj = ch_s.scalars().first()
+            if ch_obj and ch_obj.value:
+                channel_link = ch_obj.value
+    except Exception:
+        pass
+
     await message.answer(
-        "🌸 Bizning rasmiy Telegram kanalimizga a'zo bo'ling va yangi kolleksiyalarni birinchi bo'lib ko'ring!\n\n👉 @sakuraaa_chinese_shop",
+        f"🌙 Bizning rasmiy Telegram kanalimizga a'zo bo'ling va yangi kolleksiyalarni birinchi bo'lib ko'ring!\n\n👉 {channel_link}",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📢 Kanalga o'tish", url="https://t.me/sakuraaa_chinese_shop")]
+                [InlineKeyboardButton(text="📢 Kanalga o'tish", url=channel_link)]
             ]
         ),
     )

@@ -56,7 +56,7 @@ async def get_channel_info(session: AsyncSession) -> Tuple[Optional[str], str]:
 
     res_url = await session.execute(select(Setting).where(Setting.key == "channel_url"))
     ch_url_rec = res_url.scalars().first()
-    channel_url = ch_url_rec.value.strip() if ch_url_rec and ch_url_rec.value.strip() else "https://t.me/sakuraaa_chinese_shop"
+    channel_url = ch_url_rec.value.strip() if ch_url_rec and ch_url_rec.value.strip() else "https://t.me/moonlight_chinese_shop"
 
     return channel_id, channel_url
 
@@ -87,7 +87,7 @@ def build_contest_announcement_text(contest: Contest) -> str:
     """Builds cute channel announcement text matching channel vibe."""
     ends_str = format_tashkent_datetime(contest.ends_at)
     return (
-        "🌸 <b>SAKURA KONKURS</b> 🌸\n\n"
+        "🌙 <b>MOONLIGHT KONKURS</b> 🌙\n\n"
         f"{format_prize_lines(contest.prizes)}\n\n"
         "📌 <b>Shartlar:</b>\n"
         "1. Botga kiring va shaxsiy havolangizni oling\n"
@@ -719,7 +719,7 @@ async def approve_and_announce_winners(
 
     # Post channel announcement
     if channel_id and bot and winners:
-        lines = ["🌸 <b>SAKURA KONKURS G'OLIBLARI!</b> 🏆\n"]
+        lines = ["🌙 <b>MOONLIGHT KONKURS G'OLIBLARI!</b> 🏆\n"]
         for w in winners:
             tag = f"@{w['username']}" if w["username"] else escape(w["name"])
             lines.append(
@@ -741,7 +741,7 @@ async def approve_and_announce_winners(
         for w in winners:
             try:
                 dm_text = (
-                    f"Tabriklaymiz! 🎉 Siz Sakura shop konkursida <b>{w['rank']}-o'rin</b>ni egalladingiz! 🌸\n"
+                    f"Tabriklaymiz! 🎉 Siz Moonlight Chinese Shop konkursida <b>{w['rank']}-o'rin</b>ni egalladingiz! 🌙\n"
                     f"🎁 Sovg'angiz: <b>{escape(prizes[w['rank'] - 1])}</b>\n"
                     f"Natijangiz: <b>{w['score']}</b> ta taklif qilingan do'st.\n\n"
                     f"Sovg'angizni qabul qilish uchun do'kon egamiz @{contact_username} ga yozing 💌"

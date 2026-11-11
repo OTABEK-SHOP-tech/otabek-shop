@@ -22,7 +22,7 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
         "payment_terms": data.get("payment_terms", "100% oldindan to'lov"),
         "location": data.get("location", "Toshkent"),
         "contact_username": data.get("contact_username", "fkhrdnvvvva"),
-        "channel_url": data.get("channel_url", "https://t.me/sakuraaa_chinese_shop"),
+        "channel_url": data.get("channel_url", "https://t.me/moonlight_chinese_shop"),
         "has_linked_channel": bool(data.get("channel_id")),
-        "welcome_text": data.get("welcome_text", "Gulmira Shop ga xush kelibsiz! 🌸"),
+        "welcome_text": data.get("welcome_text", "Moonlight Chinese Shop ga xush kelibsiz! 🌙"),
     }

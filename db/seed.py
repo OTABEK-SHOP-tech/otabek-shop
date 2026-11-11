@@ -31,10 +31,10 @@ async def seed_database() -> None:
             Setting(key="payment_terms", value="100% oldindan to'lov"),
             Setting(key="location", value="Toshkent"),
             Setting(key="contact_username", value="fkhrdnvvvva"),
-            Setting(key="channel_url", value="https://t.me/sakuraaa_chinese_shop"),
+            Setting(key="channel_url", value="https://t.me/moonlight_chinese_shop"),
             Setting(key="channel_id", value=""),
             Setting(key="owner_claimed_at", value=""),
-            Setting(key="welcome_text", value="Gulmira Shop ga xush kelibsiz! 🌸 Xitoy brendlari va aesthetic kiyimlar do'koni."),
+            Setting(key="welcome_text", value="Moonlight Chinese Shop ga xush kelibsiz! 🌙 Xitoy brendlari va aesthetic kiyimlar do'koni."),
         ]
         session.add_all(default_settings)
 

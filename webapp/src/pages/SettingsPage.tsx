@@ -124,14 +124,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
         <div className="flex flex-col gap-2">
           <button
-            onClick={() => openTelegramLink('https://t.me/sakuraaa_chinese_shop')}
+            onClick={() => openTelegramLink(settings.channel_url || 'https://t.me/moonlight_chinese_shop')}
             className="flex items-center justify-between p-3 rounded-2xl bg-sakura-cream dark:bg-sakura-darkcardsoft text-left hover:bg-sakura-blush/40 transition-colors"
           >
             <div className="flex items-center gap-2.5">
               <span className="text-lg">📢</span>
               <div>
                 <span className="text-xs font-extrabold block">Telegram Kanal</span>
-                <span className="text-[11px] text-sakura-rose font-mono">@sakuraaa_chinese_shop</span>
+                <span className="text-[11px] text-sakura-rose font-mono">
+                  {settings.channel_url ? settings.channel_url.replace('https://t.me/', '@') : '@moonlight_chinese_shop'}
+                </span>
               </div>
             </div>
             <ExternalLink className="w-4 h-4 text-sakura-rose/70" />

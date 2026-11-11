@@ -73,7 +73,7 @@ async def get_my_contest_stats(
     user: TelegramUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    bot_username = "sakuraaa_chinese_shop_bot"
+    bot_username = "moonlight_chinese_bot"
     if bot:
         try:
             bot_me = await bot.get_me()
@@ -135,7 +135,7 @@ async def create_contest(
     # Post to channel if configured
     channel_id, channel_url = await get_channel_info(db)
     if channel_id and bot:
-        bot_username = "sakuraaa_chinese_shop_bot"
+        bot_username = "moonlight_chinese_bot"
         try:
             bot_me = await bot.get_me()
             bot_username = bot_me.username
