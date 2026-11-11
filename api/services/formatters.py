@@ -30,6 +30,15 @@ def format_cargo_stage(stage: Optional[str]) -> str:
     return CARGO_STAGE_NAMES.get(stage or "china_warehouse", "🇨🇳 Xitoy omborida")
 
 
+def mask_user_id(user_id: Optional[int]) -> str:
+    if not user_id:
+        return "ID: ***"
+    s = str(user_id)
+    if len(s) <= 4:
+        return s[:1] + "***" + s[-1:]
+    return s[:4] + "***" + s[-3:]
+
+
 def mask_customer_name(name: Optional[str]) -> str:
     clean = (name or "Mijoz").strip()
     if len(clean) <= 2:

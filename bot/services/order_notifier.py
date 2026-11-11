@@ -93,58 +93,103 @@ async def notify_new_order(
         except Exception as e:
             logger.error(f"Failed to send confirmation to customer {user_id} for order #{order_id}: {e}")
 
+        # 3. Broadcast to Live Orders Social Proof Group (@moonlight_shop_otzv)
+        try:
+            res_order = await session.execute(select(Order).where(Order.id == order_id))
+            db_order = res_order.scalars().first()
+            if db_order:
+                await broadcast_live_order_proof(bot, db_order)
+        except Exception as proof_err:
+            logger.warning(f"Could not broadcast proof for order #{order_id}: {proof_err}")
 
-async def broadcast_live_order_proof(bot_instance: Any, order: Order) -> None:
+
+DEFAULT_PROOF_CHAT = -1004297799216  # @moonlight_shop_otzv ("Moonlight shop otziv")
+
+
+async def broadcast_live_order_proof(bot_instance: Any, order: Order, target_chat_override: Optional[Any] = None) -> None:
     """
     Feature 18: Social Proof Order Broadcaster.
-    Posts an anonymized receipt of the purchase to the designated channel or chat.
-    Customer name is masked (e.g. M******a) and NO clickable profile link is included for 100% privacy!
+    Posts an aesthetic receipt of the purchase formatted like Telegram blockquote (like second pic).
+    Customer name and ID are masked (e.g. O****k, ID: 8643***824) and NO clickable profile link is included for 100% privacy!
     """
     if not bot_instance:
         return
 
-    async with async_session_factory() as session:
-        # Check target: live_orders_channel_id or channel_id
-        res_t = await session.execute(select(Setting).where(Setting.key == "live_orders_channel_id"))
-        row_t = res_t.scalars().first()
-        target_chat = row_t.value if (row_t and row_t.value) else None
-
-        if not target_chat:
-            res_ch = await session.execute(select(Setting).where(Setting.key == "channel_id"))
-            row_ch = res_ch.scalars().first()
-            target_chat = row_ch.value if (row_ch and row_ch.value) else None
-
-        if not target_chat:
-            return
-
-        from api.services.formatters import mask_customer_name, format_price
-
-        masked_name = mask_customer_name(order.customer_name)
-        item_titles = []
-        for it in (order.items_snapshot or [])[:3]:
-            title = it.get("title", "Kiyim")
-            size = it.get("size")
-            size_str = f" ({size})" if size else ""
-            item_titles.append(f"• {title}{size_str}")
-
-        items_text = "\n".join(item_titles) if item_titles else "• Go'zal kiyimlar"
-
-        proof_text = (
-            "🛍 <b>Yangi xarid rasmiylashtirildi!</b> ✨\n\n"
-            f"👤 <b>Xaridor:</b> <code>{masked_name}</code> (shaxsiy profil yopiq 🔒)\n"
-            f"📦 <b>Mahsulotlar:</b>\n{items_text}\n"
-            f"💰 <b>Jami:</b> {format_price(order.total)}\n"
-            "📍 <b>Yetkazish:</b> O'zbekiston bo'ylab 🚚\n"
-            "✅ <b>Holati:</b> Qabul qilindi, Xitoydan yo'lga chiqmoqda ✨\n\n"
-            "<i>Har bir mijozimizga ishonch uchun rahmat! 🌸</i>\n"
-            "👉 @moonlight_chinese_bot"
-        )
-
+    target_chat = target_chat_override
+    if not target_chat:
         try:
-            target_id = int(target_chat) if (target_chat.startswith("-") or target_chat.isdigit()) else target_chat
-            await bot_instance.send_message(
-                chat_id=target_id,
-                text=proof_text,
-            )
-        except Exception as e:
-            logger.warning(f"Could not broadcast live order proof to {target_chat}: {e}")
+            async with async_session_factory() as session:
+                res_t = await session.execute(select(Setting).where(Setting.key == "live_orders_channel_id"))
+                row_t = res_t.scalars().first()
+                if row_t and row_t.value:
+                    target_chat = row_t.value
+        except Exception:
+            pass
+
+    if not target_chat:
+        target_chat = DEFAULT_PROOF_CHAT
+
+    from api.services.formatters import mask_customer_name, mask_user_id, format_price
+    from datetime import datetime, timezone, timedelta
+    from html import escape
+
+    tashkent_now = datetime.now(timezone(timedelta(hours=5)))
+    time_str = tashkent_now.strftime("%d-%b-%Y %H:%M")
+
+    masked_name = mask_customer_name(order.customer_name)
+    masked_id = mask_user_id(order.user_id)
+
+    item_lines = []
+    total_qty = 0
+    for it in (order.items_snapshot or [])[:4]:
+        title = it.get("title") or it.get("product_title", "Kiyim")
+        qty = it.get("qty", 1)
+        total_qty += qty
+        size = it.get("size")
+        size_str = f" ({size})" if size else ""
+        color = it.get("color")
+        color_str = f" [{color}]" if color else ""
+        item_lines.append(f"👗 <b>Mahsulot:</b> {escape(title)}{size_str}{color_str}")
+
+    if not item_lines:
+        item_lines = ["👗 <b>Mahsulot:</b> Go'zal libos"]
+        total_qty = 1
+    elif len(order.items_snapshot or []) > 4:
+        item_lines.append(f"• va yana {len(order.items_snapshot) - 4} ta buyum...")
+
+    products_block = "\n".join(item_lines)
+
+    proof_text = (
+        "🌙 <b>Moonlight Alerts</b>\n\n"
+        "<blockquote>🎉 <b>Yangi Xarid! / New Purchase!</b>\n\n"
+        f"📌 <b>ID:</b> <code>{masked_id}</code>\n"
+        f"👤 <b>Xaridor:</b> <code>{masked_name}</code>\n"
+        f"{products_block}\n"
+        f"🔹 <b>Miqdor:</b> {total_qty} dona\n"
+        f"💰 <b>Summa:</b> {format_price(order.total)}\n"
+        + (f"📦 <b>Kargo:</b> ~{format_price(order.estimated_cargo)}\n" if order.estimated_cargo else "")
+        + f"📅 <b>Vaqt:</b> {time_str} (Toshkent)</blockquote>"
+    )
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🛍️ Moonlight Do'koniga kirish",
+                    url="https://t.me/moonlight_chinese_bot"
+                )
+            ]
+        ]
+    )
+
+    try:
+        target_id = int(target_chat) if (str(target_chat).startswith("-") or str(target_chat).isdigit()) else target_chat
+        await bot_instance.send_message(
+            chat_id=target_id,
+            text=proof_text,
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+        logger.info(f"Broadcasted live order proof for order #{order.id} to {target_chat}")
+    except Exception as e:
+        logger.warning(f"Could not broadcast live order proof to {target_chat}: {e}")
