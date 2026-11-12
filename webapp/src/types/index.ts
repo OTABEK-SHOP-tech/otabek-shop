@@ -89,6 +89,10 @@ export interface Review {
 
 export interface ShopSettings {
   cargo_rate: number;
+  cargo_rate_avia?: number;
+  cargo_rate_avto?: number;
+  delivery_days_avia?: string;
+  delivery_days_avto?: string;
   delivery_days: string;
   delivery_scope: string;
   payment_terms: string;

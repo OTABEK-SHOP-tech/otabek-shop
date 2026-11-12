@@ -44,11 +44,16 @@ async def seed_database() -> None:
         res_set = await session.execute(select(Setting))
         if res_set.scalars().first() is None:
             default_settings = [
-                Setting(key="cargo_rate", value="12000"),  # 12.000 so'm / 100g
-                Setting(key="delivery_days", value="10–15 kun"),
+                Setting(key="cargo_rate", value="10000"),  # 10.000 so'm / 100g (AVTO)
+                Setting(key="cargo_rate_avto", value="10000"),  # 10.000 so'm / 100g
+                Setting(key="cargo_rate_avia", value="14000"),  # 14.000 so'm / 100g
+                Setting(key="cargo_profit_per_100g", value="2000"),  # 2.000 so'm foyda
+                Setting(key="delivery_days_avto", value="14–18 kun"),
+                Setting(key="delivery_days_avia", value="7–9 kun"),
+                Setting(key="delivery_days", value="7–18 kun"),
                 Setting(key="delivery_scope", value="O'zbekiston bo'ylab"),
                 Setting(key="payment_terms", value="100% oldindan to'lov"),
-                Setting(key="payment_card", value="6262 5708 1374 3947 (Agrobank, Marufjonova Gulmira)"),
+                Setting(key="payment_card", value="9860 3501 4255 8658 (Humo, Ma'rufjonova Gulmira)"),
                 Setting(key="location", value="Toshkent"),
                 Setting(key="contact_username", value="MOONLIGHT_ADMINNN"),
                 Setting(key="channel_url", value="https://t.me/moonlight_chinese_shop"),

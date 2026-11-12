@@ -16,11 +16,15 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
     data = {s.key: s.value for s in rows}
 
     return {
-        "cargo_rate": int(data.get("cargo_rate", 12000)),
-        "delivery_days": data.get("delivery_days", "10–15 kun"),
+        "cargo_rate": int(data.get("cargo_rate", 10000)),
+        "cargo_rate_avto": int(data.get("cargo_rate_avto", 10000)),
+        "cargo_rate_avia": int(data.get("cargo_rate_avia", 14000)),
+        "delivery_days_avto": data.get("delivery_days_avto", "14–18 kun"),
+        "delivery_days_avia": data.get("delivery_days_avia", "7–9 kun"),
+        "delivery_days": data.get("delivery_days", "7–18 kun"),
         "delivery_scope": data.get("delivery_scope", "O'zbekiston bo'ylab"),
         "payment_terms": data.get("payment_terms", "100% oldindan to'lov"),
-        "payment_card": data.get("payment_card", "6262 5708 1374 3947 (Agrobank, Marufjonova Gulmira)"),
+        "payment_card": data.get("payment_card", "9860 3501 4255 8658 (Humo, Ma'rufjonova Gulmira)"),
         "location": data.get("location", "Toshkent"),
         "contact_username": data.get("contact_username", "MOONLIGHT_ADMINNN"),
         "channel_url": data.get("channel_url", "https://t.me/moonlight_chinese_shop"),

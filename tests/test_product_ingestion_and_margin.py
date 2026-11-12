@@ -315,3 +315,38 @@ async def test_auto_create_category_and_channel_post(test_db_session):
         assert prod.source_price == 95000
         assert prod.price == 124000
         assert prod.sizes == ["S", "M", "L", "XL", "2XL"]
+
+
+def test_calculate_cargo_rate_with_profit_formula():
+    from api.services.formatters import calculate_cargo_rate_with_profit
+
+    # AVTO: base $5.88 / kg -> $0.588 / 100g -> 7585 uzs + 2000 profit = 9585 -> 10.000 so'm / 100g
+    avto_rate = calculate_cargo_rate_with_profit(5.88, profit_uzs_per_100g=2000, usd_rate=12900)
+    assert avto_rate == 10000
+
+    # AVIA: base $8.99 / kg -> $0.899 / 100g -> 11597 uzs + 2000 profit = 13597 -> 14.000 so'm / 100g
+    avia_rate = calculate_cargo_rate_with_profit(8.99, profit_uzs_per_100g=2000, usd_rate=12900)
+    assert avia_rate == 14000
+
+
+def test_build_channel_caption_dual_tariffs_avia_and_avto():
+    caption = build_channel_caption(
+        category_slug="hoodie",
+        price=124000,
+        cargo_rate_avia=14000,
+        cargo_rate_avto=10000,
+        delivery_days_avia="7–9 kun",
+        delivery_days_avto="14–18 kun",
+        contact_username="MOONLIGHT_ADMINNN",
+        title="Pushti Vintage Hoodie",
+        sizes=["S", "M", "L", "XL", "2XL"],
+        reviews_channel="moonlight_shop_otzv",
+        cargo_separate=True,
+        adapted_style=True,
+    )
+
+    assert "✈️ AVIA: 14.000 so'm / 100g (7–9 kun)" in caption
+    assert "🚗 AVTO: 10.000 so'm / 100g (14–18 kun)" in caption
+    assert "🌸 Otzivlar: @moonlight_shop_otzv" in caption
+    assert "💌 Admin: @MOONLIGHT_ADMINNN" in caption
+

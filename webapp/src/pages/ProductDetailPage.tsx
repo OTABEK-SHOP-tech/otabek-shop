@@ -410,11 +410,25 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           {t.deliveryTerms}
         </h4>
         <div className="grid grid-cols-2 gap-2.5 text-xs">
-          <div className="flex items-center gap-2 p-2 rounded-xl bg-sakura-cream/80 dark:bg-sakura-darkcardsoft">
-            <Package className="w-4 h-4 text-sakura-rose shrink-0" />
-            <div>
-              <span className="text-[10px] text-sakura-plum/60 block">{t.cargoRateTitle}</span>
-              <span className="font-bold">{formatPrice(settings.cargo_rate || 12000)} / 100g</span>
+          <div className="col-span-2 p-2.5 rounded-xl bg-sakura-cream/80 dark:bg-sakura-darkcardsoft space-y-1">
+            <span className="text-[10px] text-sakura-plum/60 block font-bold uppercase tracking-wider">
+              {t.cargoRateTitle} (100g uchun alohida)
+            </span>
+            <div className="flex items-center justify-between text-xs pt-0.5">
+              <span className="font-bold text-sakura-plum dark:text-white flex items-center gap-1">
+                <span>✈️ AVIA (7–9 kun):</span>
+              </span>
+              <span className="font-extrabold text-sakura-rose">
+                {formatPrice(settings.cargo_rate_avia || 14000)} / 100g
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs pt-1 border-t border-sakura-pink/20">
+              <span className="font-semibold text-sakura-plum/80 dark:text-sakura-blush/80 flex items-center gap-1">
+                <span>🚗 AVTO (14–18 kun):</span>
+              </span>
+              <span className="font-extrabold text-sakura-plum dark:text-sakura-blush">
+                {formatPrice(settings.cargo_rate_avto || 10000)} / 100g
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-2 p-2 rounded-xl bg-sakura-cream/80 dark:bg-sakura-darkcardsoft">

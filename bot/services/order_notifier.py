@@ -45,7 +45,7 @@ async def send_payment_instructions(
         # Get payment card details
         res_card = await session.execute(select(Setting).where(Setting.key == "payment_card"))
         card_setting = res_card.scalars().first()
-        payment_card_text = card_setting.value if card_setting and card_setting.value else "6262 5708 1374 3947 (Agrobank, Marufjonova Gulmira)"
+        payment_card_text = card_setting.value if card_setting and card_setting.value else "9860 3501 4255 8658 (Humo, Ma'rufjonova Gulmira)"
 
     # Format card with 1-tap copyable card number and clear bank/recipient details
     if "(" in payment_card_text:

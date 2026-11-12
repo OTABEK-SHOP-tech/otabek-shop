@@ -34,8 +34,12 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
         res_settings = await session.execute(select(Setting))
         settings_map = {s.key: s.value for s in res_settings.scalars().all()}
 
-        cargo_rate = int(settings_map.get("cargo_rate", 12000))
-        delivery_days = settings_map.get("delivery_days", "10–15 kun ichida")
+        cargo_rate = int(settings_map.get("cargo_rate", 10000))
+        cargo_rate_avia = int(settings_map.get("cargo_rate_avia", 14000))
+        cargo_rate_avto = int(settings_map.get("cargo_rate_avto", 10000))
+        delivery_days_avia = settings_map.get("delivery_days_avia", "7–9 kun")
+        delivery_days_avto = settings_map.get("delivery_days_avto", "14–18 kun")
+        delivery_days = settings_map.get("delivery_days", "7–18 kun")
         delivery_scope = settings_map.get("delivery_scope", "O'zbekiston bo'ylab")
         contact_username = settings_map.get("contact_username", "MOONLIGHT_ADMINNN")
         reviews_channel = settings_map.get("reviews_channel", "moonlight_shop_otzv")
@@ -44,7 +48,11 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
             category_slug=product.category,
             price=product.price,
             cargo_rate=cargo_rate,
+            cargo_rate_avia=cargo_rate_avia,
+            cargo_rate_avto=cargo_rate_avto,
             delivery_days=delivery_days,
+            delivery_days_avia=delivery_days_avia,
+            delivery_days_avto=delivery_days_avto,
             delivery_scope=delivery_scope,
             contact_username=contact_username,
             title=product.title,

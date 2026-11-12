@@ -180,7 +180,7 @@ export const BagPage: React.FC<BagPageProps> = ({
       ? stages.findIndex((s) => s.key === completedOrder.cargo_stage)
       : 0;
 
-    const paymentCardNumber = settings.payment_card || '6262 5708 1374 3947 (Agrobank, Marufjonova Gulmira)';
+    const paymentCardNumber = settings.payment_card || "9860 3501 4255 8658 (Humo, Ma'rufjonova Gulmira)";
     const cardDigitsOnly = paymentCardNumber.split('(')[0]?.trim() || paymentCardNumber;
     const cardDetails = paymentCardNumber.includes('(') ? paymentCardNumber.split('(')[1]?.replace(')', '')?.trim() : '';
 

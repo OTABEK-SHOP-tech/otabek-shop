@@ -266,11 +266,33 @@ def _parse_price_token(token: str) -> int:
     return 0
 
 
+def calculate_cargo_rate_with_profit(
+    base_usd_per_kg: float,
+    profit_uzs_per_100g: int = 2000,
+    usd_rate: int = 12900,
+    round_to_thousand: bool = True,
+) -> int:
+    """
+    Calculate customer cargo rate per 100g from base USD/kg tariff + our profit per 100g.
+    e.g. AVTO: base $5.88/kg -> 0.588*12900 = 7585 + 2000 = 9585 -> 10000 so'm / 100g
+    e.g. AVIA: base $8.99/kg -> 0.899*12900 = 11597 + 2000 = 13597 -> 14000 so'm / 100g
+    """
+    cost_per_100g = (base_usd_per_kg / 10.0) * usd_rate
+    customer_price = cost_per_100g + profit_uzs_per_100g
+    if round_to_thousand:
+        return math.ceil(customer_price / 1000) * 1000
+    return math.ceil(customer_price / 100) * 100
+
+
 def build_channel_caption(
     category_slug: str,
     price: int,
-    cargo_rate: int = 12000,
-    delivery_days: str = "10–15 kun",
+    cargo_rate: int = 10000,
+    cargo_rate_avia: Optional[int] = None,
+    cargo_rate_avto: Optional[int] = None,
+    delivery_days: str = "7–18 kun",
+    delivery_days_avia: str = "7–9 kun",
+    delivery_days_avto: str = "14–18 kun",
     delivery_scope: str = "O'zbekiston bo'ylab",
     contact_username: str = "MOONLIGHT_ADMINNN",
     title: Optional[str] = None,
@@ -283,6 +305,7 @@ def build_channel_caption(
     Build channel post caption.
     Supports both legacy format (for backward compatibility) and
     adapted Moonlight brand format with sizes, reviews channel, and separate cargo.
+    When cargo_rate_avia & cargo_rate_avto are provided, it presents both AVIA and AVTO tariffs.
     """
     clean_cat = category_slug.replace("#", "").strip()
     tag_line = f"#{clean_cat} 🌸"
@@ -313,9 +336,19 @@ def build_channel_caption(
         ]
         sizes_display = format_sizes_display(sizes) if sizes else "Standart"
         lines.append(f"👗 Razmer: {sizes_display}")
-        lines.append(f"📦 Kargo: {format_price(cargo_rate)} / 100g{cargo_suffix}")
-        formatted_delivery = delivery_days if "ichida" in delivery_days or "kun" in delivery_days else f"{delivery_days} ichida"
-        lines.append(f"⏳ Yetkazib berish: {formatted_delivery}")
+
+        if cargo_rate_avia is not None and cargo_rate_avto is not None:
+            # Dual AVIA + AVTO breakdown
+            lines.append(
+                f"📦 Kargo (har 100g uchun alohida):\n"
+                f"  ✈️ AVIA: {format_price(cargo_rate_avia)} / 100g ({delivery_days_avia})\n"
+                f"  🚗 AVTO: {format_price(cargo_rate_avto)} / 100g ({delivery_days_avto})"
+            )
+        else:
+            lines.append(f"📦 Kargo: {format_price(cargo_rate)} / 100g{cargo_suffix}")
+            formatted_delivery = delivery_days if "ichida" in delivery_days or "kun" in delivery_days else f"{delivery_days} ichida"
+            lines.append(f"⏳ Yetkazib berish: {formatted_delivery}")
+
         rev_handle = reviews_channel.lstrip("@") if reviews_channel else "moonlight_shop_otzv"
         lines.append(f"🌸 Otzivlar: @{rev_handle}")
         lines.append(f"💌 Admin: {contact_display}")

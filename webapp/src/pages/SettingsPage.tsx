@@ -172,8 +172,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <Heart className="w-3.5 h-3.5 fill-sakura-rose" />
           <span>Moonlight Chinese Shop haqida</span>
         </div>
-        <p>📦 Kargo narxi: {formatPrice(settings.cargo_rate || 12000)} / 100g</p>
-        <p>⏳ Yetkazib berish muddati: {settings.delivery_days || "10–15 kun"}</p>
+        <p className="font-bold">📦 Kargo tariflari:</p>
+        <p className="pl-3">✈️ AVIA (7–9 kun): {formatPrice(settings.cargo_rate_avia || 14000)} / 100g</p>
+        <p className="pl-3">🚗 AVTO (14–18 kun): {formatPrice(settings.cargo_rate_avto || 10000)} / 100g</p>
         <p>🚚 Dastavka: {settings.delivery_scope || "O'zbekiston bo'ylab"}</p>
         <p>💳 To'lov: {settings.payment_terms || "100% oldindan to'lov"}</p>
         <p>📍 Joylashuv: {settings.location || "Toshkent"}</p>
