@@ -180,7 +180,9 @@ export const BagPage: React.FC<BagPageProps> = ({
       ? stages.findIndex((s) => s.key === completedOrder.cargo_stage)
       : 0;
 
-    const paymentCardNumber = settings.payment_card || '9860 0301 0204 8413 (Gulmira M.)';
+    const paymentCardNumber = settings.payment_card || '6262 5708 1374 3947 (Agrobank, Marufjonova Gulmira)';
+    const cardDigitsOnly = paymentCardNumber.split('(')[0]?.trim() || paymentCardNumber;
+    const cardDetails = paymentCardNumber.includes('(') ? paymentCardNumber.split('(')[1]?.replace(')', '')?.trim() : '';
 
     return (
       <div className="p-4 pb-28 max-w-md mx-auto text-center animate-scale-in">
@@ -215,20 +217,27 @@ export const BagPage: React.FC<BagPageProps> = ({
           </p>
 
           <div className="mt-3 p-3 rounded-2xl bg-white/90 dark:bg-sakura-darkcard/90 border border-sakura-pink/30 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-sakura-plum/70 dark:text-sakura-blush/70 flex items-center gap-1">
-                <CreditCard className="w-3.5 h-3.5 text-sakura-rose" />
-                <span>Karta rekvizitlari:</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => handleCopyCodeBlock(paymentCardNumber)}
-                className="font-mono font-bold text-sakura-plum dark:text-white select-all flex items-center gap-1 hover:text-sakura-rose transition-colors py-0.5 px-1.5 rounded-lg active:scale-95"
-                title="Nusxalash uchun bosing"
-              >
-                <span>{paymentCardNumber}</span>
-                <Copy className="w-3 h-3 text-sakura-rose inline" />
-              </button>
+            <div className="flex flex-col gap-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-sakura-plum/70 dark:text-sakura-blush/70 flex items-center gap-1 font-semibold">
+                  <CreditCard className="w-3.5 h-3.5 text-sakura-rose" />
+                  <span>Karta raqami:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyCodeBlock(cardDigitsOnly)}
+                  className="font-mono font-bold text-sakura-plum dark:text-white select-all flex items-center gap-1.5 bg-sakura-blush/60 dark:bg-sakura-darkcardsoft hover:text-sakura-rose transition-colors py-1 px-2.5 rounded-xl border border-sakura-pink/30 active:scale-95 shadow-xs"
+                  title="Karta raqamini nusxalash"
+                >
+                  <span className="tracking-wide">{cardDigitsOnly}</span>
+                  <Copy className="w-3.5 h-3.5 text-sakura-rose inline" />
+                </button>
+              </div>
+              {cardDetails && (
+                <div className="text-[11px] text-right text-sakura-plum/70 dark:text-sakura-blush/70 font-medium pt-0.5">
+                  🏦 {cardDetails}
+                </div>
+              )}
             </div>
             <div className="flex items-center justify-between text-xs pt-1 border-t border-sakura-pink/20">
               <span className="text-sakura-plum/70 dark:text-sakura-blush/70">To'lov summasi:</span>

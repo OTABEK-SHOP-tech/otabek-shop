@@ -83,7 +83,7 @@ async def test_send_payment_instructions_only_notifies_customer(test_db_session)
         assert "99.000 so'm" in text
         assert "to'lov chekini" in text.lower()
         assert "Chekni yubormaguningizcha buyurtmangiz adminlarga yuborilmaydi" in text
-        assert "9860" in text or "karta" in text.lower()
+        assert "6262" in text or "karta" in text.lower()
 
 
 @pytest.mark.asyncio

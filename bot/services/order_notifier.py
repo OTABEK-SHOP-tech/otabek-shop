@@ -45,7 +45,15 @@ async def send_payment_instructions(
         # Get payment card details
         res_card = await session.execute(select(Setting).where(Setting.key == "payment_card"))
         card_setting = res_card.scalars().first()
-        payment_card_text = card_setting.value if card_setting and card_setting.value else "9860 0301 0204 8413 (Gulmira M.)"
+        payment_card_text = card_setting.value if card_setting and card_setting.value else "6262 5708 1374 3947 (Agrobank, Marufjonova Gulmira)"
+
+    # Format card with 1-tap copyable card number and clear bank/recipient details
+    if "(" in payment_card_text:
+        card_number_part = payment_card_text.split("(", 1)[0].strip()
+        card_info_part = payment_card_text.split("(", 1)[1].rstrip(")").strip()
+        card_display = f"<code>{escape(card_number_part)}</code>\n🏦 <i>{escape(card_info_part)}</i>"
+    else:
+        card_display = f"<code>{escape(payment_card_text)}</code>"
 
     cargo_text = f"📦 <b>Taxminiy kargo:</b> {format_price(estimated_cargo)}\n" if estimated_cargo > 0 else ""
 
@@ -68,7 +76,7 @@ async def send_payment_instructions(
         f"💰 <b>To'lov summasi:</b> <b>{format_price(total)}</b>\n"
         f"{cargo_text}"
         f"💳 <b>To'lov uchun karta (rekvizitlar):</b>\n"
-        f"<code>{escape(payment_card_text)}</code>\n\n"
+        f"{card_display}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"📸 <b>Iltimos, to'lov chekini (skrinshot yoki rasm shaklida) ushbu botga yuboring! "
         f"Chekni yubormaguningizcha buyurtmangiz adminlarga yuborilmaydi.</b>\n"
