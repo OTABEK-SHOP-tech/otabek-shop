@@ -240,11 +240,22 @@ def calculate_cargo(weight_grams: Optional[int], rate_per_100g: int = 12000) -> 
     return hundred_gram_units * rate_per_100g
 
 
-def _parse_price_token(token: str) -> int:
-    """Helper to convert price token like '95.000', '95 000', '95k', '95ming', '95000' to int."""
+def _parse_price_token(token: str, yuan_rate: int = 1800) -> int:
+    """Helper to convert price token like '95.000', '95 000', '95k', '95ming', '35 yuan', '¥35', '95000' to int."""
     if not token:
         return 0
     clean = token.lower().strip()
+
+    # Check for Chinese Yuan / RMB (e.g. '35 yuan', '35 rmb', '¥35', '35元', '35 юань')
+    m_yuan = re.search(r"(?:[¥￥]\s*(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*(?:yuan|юань|rmb|cny|[元块]))", clean)
+    if m_yuan:
+        try:
+            val_str = m_yuan.group(1) or m_yuan.group(2)
+            yuan_val = float(val_str.replace(",", "."))
+            return int(round(yuan_val * yuan_rate))
+        except ValueError:
+            pass
+
     m_k = re.match(r"^(\d+(?:[.,]\d+)?)\s*k$", clean)
     if m_k:
         try:
@@ -470,6 +481,20 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
                 if val >= 1000:
                     source_price = val
                     break
+
+    # If still not found, check for Chinese Yuan / RMB (e.g. '35 yuan', '¥35', '35元', '35 rmb')
+    if not source_price:
+        for line in content_lines_no_old:
+            m_y = re.search(r"(?:[¥￥]\s*(\d+(?:[.,]\d+)?)|(\d+(?:[.,]\d+)?)\s*(?:yuan|юань|rmb|cny|[元块]))", line, re.IGNORECASE)
+            if m_y:
+                val_str = m_y.group(1) or m_y.group(2)
+                try:
+                    val = int(round(float(val_str.replace(",", ".")) * 1800))
+                    if val >= 1000:
+                        source_price = val
+                        break
+                except ValueError:
+                    pass
 
     # Fallback legacy regex if still not found
     if not source_price:

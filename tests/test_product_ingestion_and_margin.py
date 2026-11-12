@@ -280,6 +280,39 @@ def test_build_channel_caption_adapted_moonlight_style():
     assert "🌸 Otzivlar: @moonlight_shop_otzv" in caption
     assert "💌 Admin: @MOONLIGHT_ADMINNN" in caption
 
+
+def test_parse_chinese_yuan_prices():
+    from api.services.formatters import parse_channel_post
+
+    # 35 yuan
+    post1 = "#hoodie 🌸\nNarxi: 35 yuan\nRazmer: S-2XL"
+    parsed1 = parse_channel_post(post1, apply_margin=True)
+    # 35 * 1800 = 63000 UZS source (<80k -> 35% margin) -> 63000 * 1.35 = 85050 -> 85000 UZS retail
+    assert parsed1["source_price"] == 63000
+    assert parsed1["price"] == 85000
+
+    # ¥50
+    post2 = "#jempir 🌸\nNarxi: ¥50\nRazmer: Standart"
+    parsed2 = parse_channel_post(post2, apply_margin=True)
+    # 50 * 1800 = 90000 UZS source, +30% = 117000 UZS retail
+    assert parsed2["source_price"] == 90000
+    assert parsed2["price"] == 117000
+
+
+def test_is_importable_message_chinese_marketplace():
+    from bot.handlers.admin import is_importable_message
+    from unittest.mock import MagicMock
+
+    msg = MagicMock()
+    msg.caption = None
+    msg.text = "https://mobile.yangkeduo.com/goods.html?ps=L9V9tKhosS\nYang keduo"
+    msg.forward_origin = None
+    msg.forward_from_chat = None
+    msg.forward_date = None
+
+    assert is_importable_message(msg) is True
+
+
     # Check Telegram premium upgrade
     upgraded = upgrade_to_premium_emojis(caption)
     assert '<tg-emoji' in upgraded
@@ -349,4 +382,37 @@ def test_build_channel_caption_dual_tariffs_avia_and_avto():
     assert "🚗 AVTO: 10.000 so'm / 100g (14–18 kun)" in caption
     assert "🌸 Otzivlar: @moonlight_shop_otzv" in caption
     assert "💌 Admin: @MOONLIGHT_ADMINNN" in caption
+
+
+def test_parse_chinese_yuan_prices():
+    from api.services.formatters import parse_channel_post
+
+    # 35 yuan
+    post1 = "#hoodie 🌸\nNarxi: 35 yuan\nRazmer: S-2XL"
+    parsed1 = parse_channel_post(post1, apply_margin=True)
+    # 35 * 1800 = 63000 UZS source (<80k -> 35% margin) -> 63000 * 1.35 = 85050 -> 85000 UZS retail
+    assert parsed1["source_price"] == 63000
+    assert parsed1["price"] == 85000
+
+    # ¥50
+    post2 = "#jempir 🌸\nNarxi: ¥50\nRazmer: Standart"
+    parsed2 = parse_channel_post(post2, apply_margin=True)
+    # 50 * 1800 = 90000 UZS source, +30% = 117000 UZS retail
+    assert parsed2["source_price"] == 90000
+    assert parsed2["price"] == 117000
+
+
+def test_is_importable_message_chinese_marketplace():
+    from bot.handlers.admin import is_importable_message
+    from unittest.mock import MagicMock
+
+    msg = MagicMock()
+    msg.caption = None
+    msg.text = "https://mobile.yangkeduo.com/goods.html?ps=L9V9tKhosS\nYang keduo"
+    msg.forward_origin = None
+    msg.forward_from_chat = None
+    msg.forward_date = None
+
+    assert is_importable_message(msg) is True
+
 

@@ -183,6 +183,18 @@ _media_group_buffer: Dict[str, Dict[str, Any]] = {}
 _processed_media_groups: Dict[str, float] = {}
 
 
+CHINESE_MARKET_DOMAINS = (
+    "yangkeduo.com",
+    "pinduoduo.com",
+    "taobao.com",
+    "tb.cn",
+    "1688.com",
+    "dewu.com",
+    "poizon.com",
+    "aliexpress",
+)
+
+
 def is_importable_message(message: Message) -> bool:
     """Detects if message is a candidate for product import or review import."""
     text = (message.caption or message.text or "").strip()
@@ -202,8 +214,12 @@ def is_importable_message(message: Message) -> bool:
         if extract_telegram_post_links(text):
             return True
 
-    # 3. Contains hashtag and price keywords / currency / numbers
-    if "#" in text and re.search(r"(?:narxi?|narx|so['’`]?m|som|цена|price|\d{4,}|9\d\s*k)", text, re.IGNORECASE):
+    # 3. Contains Chinese marketplace link (Pinduoduo, 1688, Taobao, Poizon)
+    if any(domain in text.lower() for domain in CHINESE_MARKET_DOMAINS):
+        return True
+
+    # 4. Contains hashtag and price keywords / currency / numbers
+    if "#" in text and re.search(r"(?:narxi?|narx|so['’`]?m|som|цена|price|\d{4,}|9\d\s*k|yuan|юань|rmb|[¥￥元])", text, re.IGNORECASE):
         return True
 
     return False
@@ -232,6 +248,43 @@ async def process_product_import(
             session.add(rev)
             await session.commit()
         await message.answer("⭐ <b>Mijoz fikri (#отзыв) avtomatik saqlandi va tasdiqlandi!</b> 🌸")
+        return
+
+    # Check for Chinese marketplace links without photos (e.g. Pinduoduo / Yangkeduo)
+    if not photos and any(domain in raw_text.lower() for domain in CHINESE_MARKET_DOMAINS):
+        platform_name = (
+            "Pinduoduo (Yang Ke Duo) 🇨🇳"
+            if "yangkeduo" in raw_text.lower() or "pinduoduo" in raw_text.lower()
+            else (
+                "1688 (Alibaba) 🇨🇳"
+                if "1688" in raw_text.lower()
+                else (
+                    "Taobao 🇨🇳"
+                    if "taobao" in raw_text.lower() or "tb.cn" in raw_text.lower()
+                    else "Xitoy savdo platformasi 🇨🇳"
+                )
+            )
+        )
+        m_goods = re.search(r"(?:goods_id|id)=(\d+)|ps=([A-Za-z0-9]+)", raw_text, re.IGNORECASE)
+        ref_id = (m_goods.group(1) or m_goods.group(2)) if m_goods else "Aniqlangan"
+
+        guide_msg = (
+            f"🌸 <b>{platform_name} tovar havolasi qabul qilindi!</b> ✨\n\n"
+            f"🆔 <b>Mahsulot kodi / ID:</b> <code>{ref_id}</code>\n\n"
+            f"ℹ️ <i>Eslatma: Pinduoduo va Xitoy ilovalari o'z ichki tizimida bo'lgani sababli, tovar rasmi va narxini tashqi botlar to'g'ridan-to'g'ri o'qiy olmaydi (login talab qiladi).</i>\n\n"
+            f"📸 <b>Ushbu tovarni do'konga qo'shish va kanalga chiqarish uchun:</b>\n"
+            f"1. Pinduoduo ilovasidan mahsulot <b>rasmini (yoki skrinshotini)</b> ushbu botga yuboring.\n"
+            f"2. Tagiga esa Xitoydagi narxini yozing (masalan: <code>28 yuan</code> yoki <code>¥35</code>) yoki so'mdagi narxini <code>50.000 so'm</code>.\n\n"
+            f"💰 Bot avtomatik ravishda Yuanni so'mga o'girib, <b>30% foyda</b> qo'shadi, <b>AVTO (10.000 so'm)</b> va <b>AVIA (14.000 so'm)</b> kargo tariflarini biriktirib, <b>Premium stikerlar</b> bilan kanalga tayyorlab beradi! 💌"
+        )
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="➕ Qo'lda tovar qo'shish", callback_data="admin_add_product"),
+                ]
+            ]
+        )
+        await message.answer(upgrade_to_premium_emojis(guide_msg), reply_markup=markup)
         return
 
     # 1. Check if text contains Telegram post link
