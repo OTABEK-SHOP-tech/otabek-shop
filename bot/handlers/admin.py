@@ -43,6 +43,11 @@ from api.services.telegram_fetcher import (
 from bot.keyboards.reply import get_admin_main_keyboard, get_main_reply_keyboard
 from bot.services.channel_post import post_product_to_channel
 from bot.services.ownership import claim_ownership, create_owner_invite
+from bot.services.premium_emojis import (
+    upgrade_to_premium_emojis,
+    PREMIUM_BTN_BAG_ID,
+    PREMIUM_BTN_STAR_ID,
+)
 from db.models import Admin, Product, Category, Review, Order, User, Setting
 from db.session import async_session_factory
 
@@ -294,16 +299,23 @@ async def process_product_import(
         f"🌸 <b>Nomi:</b> {escape(title)}\n"
         f"📥 <b>Asl narxi (ta'minotchi):</b> {source_price_str}\n"
         f"💰 <b>Sotuv narxi ({margin_str} foyda):</b> <b>{retail_price_str}</b>\n"
-        f"📦 <b>Kargo:</b> {format_price(cargo_rate)} / 100g <i>(alohida)</i>\n"
+        f"📦 <b>Kargo tariflari (har 100g uchun alohida):</b>\n"
+        f"  ✈️ <b>AVIA:</b> 14.000 so'm / 100g (7–9 kun)\n"
+        f"  🚗 <b>AVTO:</b> 10.000 so'm / 100g (14–18 kun)\n"
         f"👗 <b>O'lchamlar:</b> {escape(sizes_display)}\n"
         f"📸 <b>Rasmlar:</b> {len(photos)} ta\n\n"
-        f"<i>Saqlash tugmasini bossangiz, mahsulot do'konga qo'shiladi va avtomatik Moonlight kanaliga joylanadi.</i>"
+        f"<i>Saqlash tugmasini bossangiz, mahsulot do'konga qo'shiladi va avtomatik Moonlight kanaliga premium stikerlar bilan joylanadi.</i>"
     )
 
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ To'g'ri, saqlash & kanalga joylash", callback_data="wizard_save_fast"),
+                InlineKeyboardButton(
+                    text="✅ To'g'ri, saqlash & kanalga joylash",
+                    callback_data="wizard_save_fast",
+                    icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
+                    style="primary",
+                ),
             ],
             [
                 InlineKeyboardButton(text="✏️ O'zgartirish", callback_data="admin_add_product"),
@@ -311,7 +323,7 @@ async def process_product_import(
             ]
         ]
     )
-    await message.answer(summary, reply_markup=markup)
+    await message.answer(upgrade_to_premium_emojis(summary), reply_markup=markup)
 
 
 @router.message(StateFilter(None, ProductWizard.photos), is_importable_message)
@@ -587,7 +599,9 @@ async def process_wizard_description(message: Message, state: FSMContext):
         f"🏷️ <b>Kategoriya:</b> #{data['category']}\n"
         f"🎀 <b>Nomi:</b> {escape(data['title'])}\n"
         f"💰 <b>Narxi:</b> {format_price(data['price'])}\n"
-        f"📦 <b>Kargo:</b> ~{format_price(cargo)}\n"
+        "📦 <b>Kargo tariflari (har 100g uchun alohida):</b>\n"
+        "  ✈️ <b>AVIA:</b> 14.000 so'm / 100g (7–9 kun)\n"
+        "  🚗 <b>AVTO:</b> 10.000 so'm / 100g (14–18 kun)\n"
         f"📏 <b>O'lchamlar:</b> {escape(sizes_str)}\n"
         f"🎨 <b>Ranglar:</b> {escape(colors_str)}\n"
         f"📝 <b>Tavsif:</b> {escape(data['description'] or 'Mavjud emas')}\n"
@@ -597,7 +611,12 @@ async def process_wizard_description(message: Message, state: FSMContext):
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Saqlash", callback_data="wizard_save"),
+                InlineKeyboardButton(
+                    text="✅ Saqlash & Kanalga joylash",
+                    callback_data="wizard_save",
+                    icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
+                    style="primary",
+                ),
                 InlineKeyboardButton(text="✏️ Qayta kiritish", callback_data="admin_add_product"),
             ],
             [
@@ -607,7 +626,7 @@ async def process_wizard_description(message: Message, state: FSMContext):
     )
 
     await state.set_state(ProductWizard.confirm)
-    await message.answer(preview, reply_markup=markup)
+    await message.answer(upgrade_to_premium_emojis(preview), reply_markup=markup)
 
 
 @router.callback_query(F.data.in_(["wizard_save", "wizard_save_fast"]))
@@ -668,19 +687,30 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
     channel_res = await post_product_to_channel(prod)
     if channel_res.get("success"):
         sizes_txt = format_sizes_display(prod.sizes) if prod.sizes else "Standart"
-        await callback.message.edit_text(
+        saved_msg = (
             f"✅ <b>Mahsulot muvaffaqiyatli saqlandi va kanalga joylandi! (#{prod_id})</b> 🌸\n\n"
             f"🏷️ <b>Kategoriya:</b> #{prod.category}\n"
             f"🎀 <b>Nomi:</b> {escape(prod.title)}\n"
             f"💰 <b>Sotuv narxi:</b> {format_price(prod.price)}\n"
             f"📥 <b>Asl narxi:</b> {format_price(prod.source_price) if prod.source_price else '—'}\n"
+            f"📦 <b>Kargo tariflari (har 100g alohida):</b>\n"
+            f"  ✈️ AVIA: 14.000 so'm / 100g (7–9 kun)\n"
+            f"  🚗 AVTO: 10.000 so'm / 100g (14–18 kun)\n"
             f"👗 <b>O'lchamlar:</b> {escape(sizes_txt)}\n"
             f"📢 <b>Kanal:</b> @moonlight_chinese_shop\n"
-            f"🛍️ Mini App havolasi ulandi.",
+            f"🛍️ Mini App havolasi ulandi."
+        )
+        await callback.message.edit_text(
+            upgrade_to_premium_emojis(saved_msg),
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
-                        InlineKeyboardButton(text="➕ Yana mahsulot", callback_data="admin_add_product"),
+                        InlineKeyboardButton(
+                            text="➕ Yana mahsulot",
+                            callback_data="admin_add_product",
+                            icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
+                            style="primary",
+                        ),
                         InlineKeyboardButton(text="👑 Bosh menyu", callback_data="admin_done"),
                     ]
                 ]

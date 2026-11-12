@@ -30,6 +30,11 @@ TG_CROWN = '<tg-emoji emoji-id="5429387335626145566">👑</tg-emoji>'
 TG_RIBBON = '<tg-emoji emoji-id="5429504631183001681">🎀</tg-emoji>'
 TG_CART = '<tg-emoji emoji-id="5431499171045581032">🛒</tg-emoji>'
 TG_BAGS = '<tg-emoji emoji-id="5373052667671093676">🛍</tg-emoji>'
+TG_PLANE = '<tg-emoji emoji-id="5429402517042566710">✈️</tg-emoji>'
+TG_AUTO = '<tg-emoji emoji-id="5429440624022464104">🚗</tg-emoji>'
+TG_LETTER = '<tg-emoji emoji-id="5429532824707289895">💌</tg-emoji>'
+TG_HEART = '<tg-emoji emoji-id="5429388216094444138">💗</tg-emoji>'
+TG_CHECK = '<tg-emoji emoji-id="5429351167706547656">✅</tg-emoji>'
 
 # Premium Button Icon ID
 PREMIUM_BTN_BAG_ID = "5373052667671093676"  # Shopping bags from RestrictedEmoji
@@ -55,6 +60,12 @@ EMOJI_TO_PREMIUM = {
     "🛒": TG_CART,
     "🛍️": TG_BAGS,
     "🛍": TG_BAGS,
+    "✈️": TG_PLANE,
+    "🚗": TG_AUTO,
+    "🚚": TG_AUTO,
+    "💌": TG_LETTER,
+    "💗": TG_HEART,
+    "✅": TG_CHECK,
     "🔹": TG_STAR,
     "⭐": TG_STAR,
 }
