@@ -273,12 +273,12 @@ def test_build_channel_caption_adapted_moonlight_style():
 
     assert "#hoodie 🌸" in caption
     assert "Pushti Vintage Hoodie" in caption
-    assert "💰 Narxi: 124.000 so'm" in caption
-    assert "👗 Razmer: S-2XL" in caption
-    assert "📦 Kargo: 12.000 so'm / 100g (alohida)" in caption
+    assert "🎟️ Narx: 124.000 so'm" in caption
+    assert "🐾 Razmer: S-2XL" in caption
+    assert "🌸 Kargo: 12.000 so'm / 100g (alohida)" in caption
     assert "⏳ Yetkazib berish: 10–15 kun ichida" in caption
-    assert "🌸 Otzivlar: @moonlight_shop_otzv" in caption
-    assert "💌 Admin: @MOONLIGHT_ADMINNN" in caption
+    assert "✔️ Otzivlar: @moonlight_shop_otzv" in caption
+    assert "@MOONLIGHT_ADMINNN" in caption
 
 
 def test_parse_chinese_yuan_prices():
@@ -380,8 +380,8 @@ def test_build_channel_caption_dual_tariffs_avia_and_avto():
 
     assert "✈️ AVIA: 14.000 so'm / 100g (7–9 kun)" in caption
     assert "🚗 AVTO: 10.000 so'm / 100g (14–18 kun)" in caption
-    assert "🌸 Otzivlar: @moonlight_shop_otzv" in caption
-    assert "💌 Admin: @MOONLIGHT_ADMINNN" in caption
+    assert "✔️ Otzivlar: @moonlight_shop_otzv" in caption
+    assert "@MOONLIGHT_ADMINNN" in caption
 
 
 def test_parse_chinese_yuan_prices():

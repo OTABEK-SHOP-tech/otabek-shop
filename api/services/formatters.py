@@ -308,6 +308,7 @@ def build_channel_caption(
     contact_username: str = "MOONLIGHT_ADMINNN",
     title: Optional[str] = None,
     sizes: Optional[List[str]] = None,
+    colors: Optional[List[str]] = None,
     reviews_channel: Optional[str] = None,
     cargo_separate: bool = False,
     adapted_style: bool = False,
@@ -339,30 +340,36 @@ def build_channel_caption(
     )
 
     if adapted_style or reviews_channel:
-        # Moonlight adapted channel format
-        cargo_suffix = " (alohida)" if cargo_separate else ""
+        # Moonlight adapted channel format (Sakura aesthetic)
         lines = [
             header_line,
-            f"💰 Narxi: {format_price(price)}",
+            f"🎟️ Narx: {format_price(price)}",
         ]
         sizes_display = format_sizes_display(sizes) if sizes else "Standart"
-        lines.append(f"👗 Razmer: {sizes_display}")
+        lines.append(f"🐾 Razmer: {sizes_display}")
+
+        if colors and len(colors) > 0:
+            colors_display = ", ".join(colors)
+            lines.append(f"🎨 Ranglar: {colors_display}")
 
         if cargo_rate_avia is not None and cargo_rate_avto is not None:
             # Dual AVIA + AVTO breakdown
             lines.append(
-                f"📦 Kargo (har 100g uchun alohida):\n"
+                f"🌸 Kargo (har 100g uchun alohida):\n"
                 f"  ✈️ AVIA: {format_price(cargo_rate_avia)} / 100g ({delivery_days_avia})\n"
                 f"  🚗 AVTO: {format_price(cargo_rate_avto)} / 100g ({delivery_days_avto})"
             )
         else:
-            lines.append(f"📦 Kargo: {format_price(cargo_rate)} / 100g{cargo_suffix}")
+            cargo_suffix = " (alohida)" if cargo_separate else ""
+            lines.append(f"🌸 Kargo: {format_price(cargo_rate)} / 100g{cargo_suffix}")
             formatted_delivery = delivery_days if "ichida" in delivery_days or "kun" in delivery_days else f"{delivery_days} ichida"
             lines.append(f"⏳ Yetkazib berish: {formatted_delivery}")
 
         rev_handle = reviews_channel.lstrip("@") if reviews_channel else "moonlight_shop_otzv"
-        lines.append(f"🌸 Otzivlar: @{rev_handle}")
-        lines.append(f"💌 Admin: {contact_display}")
+        lines.append(f"✔️ Otzivlar: @{rev_handle}")
+        delivery_str = f"{delivery_days_avia} (AVIA) / {delivery_days_avto} (AVTO)" if (cargo_rate_avia and cargo_rate_avto) else delivery_days
+        lines.append(f"🚚 Yetkazib berish: {delivery_str}")
+        lines.append(f"\nAdmin: {contact_display} 🍩")
         return "\n".join(lines)
 
     # Standard / legacy format

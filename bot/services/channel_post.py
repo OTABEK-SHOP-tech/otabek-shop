@@ -57,6 +57,7 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
             contact_username=contact_username,
             title=product.title,
             sizes=product.sizes or [],
+            colors=product.colors or [],
             reviews_channel=reviews_channel,
             cargo_separate=True,
             adapted_style=True,

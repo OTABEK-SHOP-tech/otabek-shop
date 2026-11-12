@@ -64,7 +64,15 @@ async def send_payment_instructions(
             t = item.get("title", "Mahsulot")
             q = item.get("qty", 1)
             p = item.get("price", 0)
-            item_lines.append(f"  {idx}. {escape(str(t))} — {q} x {format_price(p)}")
+            size = item.get("size")
+            color = item.get("color")
+            attrs = []
+            if size:
+                attrs.append(f"Razmer: {size}")
+            if color:
+                attrs.append(f"Rang: {color}")
+            attr_str = f" ({', '.join(attrs)})" if attrs else ""
+            item_lines.append(f"  {idx}. {escape(str(t))}{escape(attr_str)} — {q} x {format_price(p)}")
         if len(items) > 5:
             item_lines.append(f"  ... va yana {len(items) - 5} ta mahsulot")
         items_block = f"📋 <b>Tanlangan mahsulotlar:</b>\n" + "\n".join(item_lines) + "\n\n"
@@ -161,7 +169,15 @@ async def notify_admins_new_receipt(order_id: int) -> None:
             title = it.get("title", "Mahsulot")
             qty = it.get("qty", 1)
             price = it.get("price", 0)
-            item_lines.append(f"  {idx}. {escape(str(title))} ({qty}x{format_price(price)})")
+            size = it.get("size")
+            color = it.get("color")
+            attrs = []
+            if size:
+                attrs.append(f"Razmer: {size}")
+            if color:
+                attrs.append(f"Rang: {color}")
+            attr_str = f" [{', '.join(attrs)}]" if attrs else ""
+            item_lines.append(f"  {idx}. {escape(str(title))}{escape(attr_str)} ({qty}x{format_price(price)})")
         if len(order.items_snapshot or []) > 5:
             item_lines.append(f"  ... va yana {len(order.items_snapshot) - 5} ta mahsulot")
         items_block = "\n".join(item_lines) if item_lines else "  1 ta mahsulot"

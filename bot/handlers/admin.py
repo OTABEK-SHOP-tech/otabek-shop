@@ -201,7 +201,11 @@ def is_importable_message(message: Message) -> bool:
     if text.startswith("/"):
         return False
 
-    # 1. Forwarded from channel / user / chat
+    # 1. Any photo/screenshot sent by admin is candidate for product import
+    if message.photo:
+        return True
+
+    # 2. Forwarded from channel / user / chat
     if (
         getattr(message, "forward_origin", None) is not None
         or getattr(message, "forward_from_chat", None) is not None
@@ -209,20 +213,79 @@ def is_importable_message(message: Message) -> bool:
     ):
         return True
 
-    # 2. Contains Telegram post link
+    # 3. Contains Telegram post link
     if TG_POST_LINK_RE.search(text) or "@" in text:
         if extract_telegram_post_links(text):
             return True
 
-    # 3. Contains Chinese marketplace link (Pinduoduo, 1688, Taobao, Poizon)
+    # 4. Contains Chinese marketplace link (Pinduoduo, 1688, Taobao, Poizon)
     if any(domain in text.lower() for domain in CHINESE_MARKET_DOMAINS):
         return True
 
-    # 4. Contains hashtag and price keywords / currency / numbers
+    # 5. Contains hashtag and price keywords / currency / numbers
     if "#" in text and re.search(r"(?:narxi?|narx|so['’`]?m|som|цена|price|\d{4,}|9\d\s*k|yuan|юань|rmb|[¥￥元])", text, re.IGNORECASE):
         return True
 
+    # 6. Price keywords or Chinese currency in text
+    if re.search(r"(?:yuan|юань|rmb|[¥￥元]|\b\d{4,}\s*(?:so['’`]?m|som))", text, re.IGNORECASE):
+        return True
+
     return False
+
+
+async def show_product_import_summary(message: Message, state: FSMContext) -> None:
+    """Builds and shows the final preview card before channel posting."""
+    data = await state.get_data()
+    photos = data.get("photos", [])
+    cat_slug = (data.get("category") or "kiyim").lower().replace("#", "").strip()
+    title = data.get("title") or f"{cat_slug.capitalize()} 🌸"
+    source_price = data.get("source_price", 0)
+    retail_price = data.get("price", 0)
+    margin_percent = data.get("margin_percent", 30)
+    sizes = data.get("sizes", [])
+    colors = data.get("colors", [])
+    source_label = data.get("source_label", "Mahsulot importi")
+
+    sizes_display = format_sizes_display(sizes) if sizes else "Standart"
+    colors_display = ", ".join(colors) if colors else "Standart"
+    source_price_str = format_price(source_price) if source_price else "Aniqlanmadi"
+    retail_price_str = format_price(retail_price) if retail_price else "Aniqlanmadi"
+    margin_str = f"+{int(margin_percent)}%" if margin_percent else "+30%"
+
+    summary = (
+        f"✨ <b>{source_label}: Mahsulot ma'lumotlari tayyor!</b> 🌸\n\n"
+        f"🏷️ <b>Kategoriya:</b> #{cat_slug}\n"
+        f"🌸 <b>Nomi:</b> {escape(title)}\n"
+        f"📥 <b>Asl narxi (ta'minotchi):</b> {source_price_str}\n"
+        f"💰 <b>Sotuv narxi ({margin_str} foyda):</b> <b>{retail_price_str}</b>\n"
+        f"🌸 <b>Kargo tariflari (har 100g uchun alohida):</b>\n"
+        f"  ✈️ <b>AVIA:</b> 14.000 so'm / 100g (7–9 kun)\n"
+        f"  🚗 <b>AVTO:</b> 10.000 so'm / 100g (14–18 kun)\n"
+        f"🐾 <b>O'lchamlar (Razmer):</b> {escape(sizes_display)}\n"
+        f"🎨 <b>Ranglar (Colors):</b> {escape(colors_display)}\n"
+        f"📸 <b>Rasmlar:</b> {len(photos)} ta\n\n"
+        f"<i>Saqlash tugmasini bossangiz, mahsulot do'konga qo'shiladi va avtomatik Moonlight kanaliga premium stikerlar bilan joylanadi.</i>"
+    )
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ To'g'ri, saqlash & kanalga joylash",
+                    callback_data="wizard_save_fast",
+                    icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
+                    style="primary",
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="✏️ O'zgartirish", callback_data="admin_add_product"),
+                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel"),
+            ]
+        ]
+    )
+    # Remove reply keyboard if active and show inline summary
+    await message.answer("✅ <i>Ma'lumotlar qabul qilindi!</i>", reply_markup=ReplyKeyboardRemove())
+    await message.answer(upgrade_to_premium_emojis(summary), reply_markup=markup)
 
 
 async def process_product_import(
@@ -323,8 +386,9 @@ async def process_product_import(
     retail_price = parsed["retail_price"]
     margin_percent = parsed["margin_percent"]
     sizes = parsed["sizes"]
+    colors = parsed.get("colors", [])
     cargo_rate = parsed.get("cargo_rate", 12000)
-    cat_slug = parsed["category"]
+    cat_slug = parsed["category"] or "kiyim"
     title = parsed["title"] or f"{cat_slug.capitalize()} 🌸"
 
     await state.update_data(
@@ -332,51 +396,67 @@ async def process_product_import(
         title=title,
         price=retail_price,
         source_price=source_price,
+        margin_percent=margin_percent,
         old_price=parsed.get("old_price"),
         category=cat_slug,
         sizes=sizes,
-        colors=parsed.get("colors", []),
+        colors=colors,
         weight_grams=parsed.get("weight_grams"),
         cargo_rate=cargo_rate,
         description=raw_text,
+        source_label=source_label,
     )
 
-    sizes_display = format_sizes_display(sizes) if sizes else "Standart"
-    source_price_str = format_price(source_price) if source_price else "Aniqlanmadi"
-    retail_price_str = format_price(retail_price) if retail_price else "Aniqlanmadi"
-    margin_str = f"+{int(margin_percent)}%" if margin_percent else "+30%"
+    # If price was not detected: prompt for price
+    if not retail_price:
+        await state.set_state(ProductWizard.price)
+        await message.answer(
+            "💰 <b>1-qadam: Mahsulot narxini kiriting:</b>\n"
+            "(Xitoydagi narxi: <code>35 yuan</code> yoki so'mda: <code>95.000 so'm</code>)\n\n"
+            "<i>Bot avtomatik 25%-35% foyda va kargo hisoblaydi ✨</i>",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
+                resize_keyboard=True,
+            ),
+        )
+        return
 
-    summary = (
-        f"✨ <b>{source_label}: Mahsulot ma'lumotlari aniqlandi!</b> 🌸\n\n"
-        f"🏷️ <b>Kategoriya:</b> #{cat_slug}\n"
-        f"🌸 <b>Nomi:</b> {escape(title)}\n"
-        f"📥 <b>Asl narxi (ta'minotchi):</b> {source_price_str}\n"
-        f"💰 <b>Sotuv narxi ({margin_str} foyda):</b> <b>{retail_price_str}</b>\n"
-        f"📦 <b>Kargo tariflari (har 100g uchun alohida):</b>\n"
-        f"  ✈️ <b>AVIA:</b> 14.000 so'm / 100g (7–9 kun)\n"
-        f"  🚗 <b>AVTO:</b> 10.000 so'm / 100g (14–18 kun)\n"
-        f"👗 <b>O'lchamlar:</b> {escape(sizes_display)}\n"
-        f"📸 <b>Rasmlar:</b> {len(photos)} ta\n\n"
-        f"<i>Saqlash tugmasini bossangiz, mahsulot do'konga qo'shiladi va avtomatik Moonlight kanaliga premium stikerlar bilan joylanadi.</i>"
-    )
+    # If sizes were not detected: prompt for sizes
+    if not sizes:
+        await state.set_state(ProductWizard.sizes)
+        await message.answer(
+            "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n"
+            "(Masalan: <code>S-2XL</code> yoki <code>S, M, L</code> yoki 'Standart' tugmasini bosing):",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="Standart 🌸")],
+                    [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
+                    [KeyboardButton(text="❌ Bekor qilish")],
+                ],
+                resize_keyboard=True,
+            ),
+        )
+        return
 
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ To'g'ri, saqlash & kanalga joylash",
-                    callback_data="wizard_save_fast",
-                    icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
-                    style="primary",
-                ),
-            ],
-            [
-                InlineKeyboardButton(text="✏️ O'zgartirish", callback_data="admin_add_product"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel"),
-            ]
-        ]
-    )
-    await message.answer(upgrade_to_premium_emojis(summary), reply_markup=markup)
+    # If colors were not detected: prompt for colors
+    if not colors:
+        await state.set_state(ProductWizard.colors)
+        await message.answer(
+            "🎨 <b>3-qadam: Mahsulot ranglarini kiriting:</b>\n"
+            "(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                    [KeyboardButton(text="Oq, Qora"), KeyboardButton(text="Oq, Qora, Pushti")],
+                    [KeyboardButton(text="❌ Bekor qilish")],
+                ],
+                resize_keyboard=True,
+            ),
+        )
+        return
+
+    # All information present -> show final summary card directly
+    await show_product_import_summary(message, state)
 
 
 @router.message(StateFilter(None, ProductWizard.photos), is_importable_message)
@@ -518,19 +598,81 @@ async def process_wizard_title(message: Message, state: FSMContext):
 @router.message(ProductWizard.price, F.text)
 async def process_wizard_price(message: Message, state: FSMContext):
     if message.text == "⬅️ Orqaga":
+        data = await state.get_data()
+        if data.get("source_label"):
+            await state.clear()
+            await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
+            return
         await state.set_state(ProductWizard.title)
         await message.answer("Nomini kiriting:")
         return
-
-    raw = message.text.replace(".", "").replace(" ", "").replace("so'm", "").replace("som", "").strip()
-    if not raw.isdigit() or int(raw) <= 0:
-        await message.answer("⚠️ Iltimos, to'g'ri son kiriting (masalan: 99000):")
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
         return
 
-    price = int(raw)
-    await state.update_data(price=price)
+    raw_text = message.text.strip()
+    parsed = parse_channel_post(raw_text, apply_margin=True)
+    source_price = parsed["source_price"]
+    retail_price = parsed["retail_price"]
+    margin_percent = parsed["margin_percent"]
 
-    # Categories
+    if not retail_price:
+        digits = re.sub(r"\D", "", raw_text)
+        if digits and int(digits) > 0:
+            val = int(digits)
+            if "yuan" in raw_text.lower() or "¥" in raw_text or "rmb" in raw_text.lower():
+                source_price = int(round(val * 1800))
+                margin_percent = calculate_margin_percent(source_price)
+                retail_price = calculate_retail_price(source_price, margin_percent)
+            else:
+                retail_price = val
+                margin_percent = calculate_margin_percent(val)
+                source_price = int(round(val / (1 + margin_percent / 100)))
+
+    if not retail_price or retail_price <= 0:
+        await message.answer("⚠️ Iltimos, to'g'ri narx kiriting (masalan: <code>35 yuan</code> yoki <code>95000</code>):")
+        return
+
+    await state.update_data(price=retail_price, source_price=source_price, margin_percent=margin_percent)
+    data = await state.get_data()
+
+    # If in import/screenshot flow:
+    if data.get("source_label"):
+        if not data.get("sizes"):
+            await state.set_state(ProductWizard.sizes)
+            await message.answer(
+                "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n(Masalan: <code>S-2XL</code> yoki <code>S, M, L</code> yoki 'Standart' tugmasini bosing):",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="Standart 🌸")],
+                        [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
+                        [KeyboardButton(text="❌ Bekor qilish")],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            return
+
+        if not data.get("colors"):
+            await state.set_state(ProductWizard.colors)
+            await message.answer(
+                "🎨 <b>3-qadam: Mahsulot ranglarini kiriting:</b>\n(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                        [KeyboardButton(text="Oq, Qora"), KeyboardButton(text="Oq, Qora, Pushti")],
+                        [KeyboardButton(text="❌ Bekor qilish")],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            return
+
+        await show_product_import_summary(message, state)
+        return
+
+    # Standard manual wizard flow:
     async with async_session_factory() as session:
         res = await session.execute(select(Category).order_by(Category.sort_order))
         categories = res.scalars().all()
@@ -573,11 +715,44 @@ async def process_wizard_category(callback: CallbackQuery, state: FSMContext):
 
 @router.message(ProductWizard.sizes, F.text)
 async def process_wizard_sizes(message: Message, state: FSMContext):
-    sizes = []
-    if message.text != "O'tkazib yuborish ⏭️" and message.text != "⬅️ Orqaga":
-        sizes = [s.strip() for s in message.text.split(",") if s.strip()]
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
+        return
+
+    text = message.text.strip()
+    if "standart" in text.lower() or text in ["O'tkazib yuborish ⏭️", "Standart 🌸"]:
+        sizes = ["Standart"]
+    else:
+        from api.services.formatters import parse_sizes
+        sizes = parse_sizes(text)
+        if not sizes:
+            sizes = [s.strip() for s in text.split(",") if s.strip()]
 
     await state.update_data(sizes=sizes)
+    data = await state.get_data()
+
+    # Check if in import/screenshot flow:
+    if data.get("source_label"):
+        if not data.get("colors"):
+            await state.set_state(ProductWizard.colors)
+            await message.answer(
+                "🎨 <b>3-qadam: Ranglarni kiriting:</b>\n(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                        [KeyboardButton(text="Oq, Qora"), KeyboardButton(text="Oq, Qora, Pushti")],
+                        [KeyboardButton(text="❌ Bekor qilish")],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            return
+
+        await show_product_import_summary(message, state)
+        return
+
+    # Normal wizard flow:
     await state.set_state(ProductWizard.colors)
     await message.answer(
         "🎨 <b>6/8 qadam:</b> Ranglarni kiriting (vergul bilan ajratib, masalan: <i>Pushti 🌸, Oq 🤍</i>) yoki o'tkazib yuboring:",
@@ -593,11 +768,26 @@ async def process_wizard_sizes(message: Message, state: FSMContext):
 
 @router.message(ProductWizard.colors, F.text)
 async def process_wizard_colors(message: Message, state: FSMContext):
-    colors = []
-    if message.text != "O'tkazib yuborish ⏭️" and message.text != "⬅️ Orqaga":
-        colors = [c.strip() for c in message.text.split(",") if c.strip()]
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
+        return
+
+    text = message.text.strip()
+    if "standart" in text.lower() or "rasmda" in text.lower() or text in ["O'tkazib yuborish ⏭️", "Rasmda ko'rsatilgan (Standart) 🌸"]:
+        colors = ["Rasmda ko'rsatilgan"]
+    else:
+        colors = [c.strip() for c in re.split(r"[,;/|]+", text) if c.strip()]
 
     await state.update_data(colors=colors)
+    data = await state.get_data()
+
+    # Check if in import/screenshot flow:
+    if data.get("source_label"):
+        await show_product_import_summary(message, state)
+        return
+
+    # Normal wizard flow continues to weight:
     await state.set_state(ProductWizard.weight)
     await message.answer(
         "⚖️ <b>7/8 qadam:</b> Mahsulot og'irligini grammda kiriting (kargoni hisoblash uchun, masalan: <i>350</i>) yoki o'tkazib yuboring:",
