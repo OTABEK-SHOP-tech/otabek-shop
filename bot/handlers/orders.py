@@ -5,6 +5,11 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKe
 from sqlalchemy import select
 
 from bot.loader import bot
+from bot.services.premium_emojis import (
+    upgrade_to_premium_emojis,
+    strip_custom_emojis,
+    PREMIUM_BTN_STAR_ID,
+)
 from db.models import Order, Admin, User, Setting
 from db.session import async_session_factory
 
@@ -108,15 +113,56 @@ async def handle_receipt_upload(message: Message, state: FSMContext):
 
         order.receipt_photo_id = photo_id
         order.status = "pending_approval"
+
+        # Fetch contact admin username for customer support button
+        c_set = (await session.execute(select(Setting).where(Setting.key == "contact_username"))).scalars().first()
+        contact_username = c_set.value.lstrip("@") if (c_set and c_set.value) else "MOONLIGHT_ADMINNN"
+        clean_contact = contact_username.replace("@", "")
+
         await session.commit()
         order_id = order.id
 
-    # 1. Send customer confirmation
-    await message.answer(
-        "✅ <b>To'lov chekingiz qabul qilindi! Adminlar tekshirmoqda... ⏳</b>\n\n"
-        "Adminlarimiz to'lovni tasdiqlashi bilan sizga xabar yuboramiz 🌸",
-        parse_mode="HTML",
+    # 1. Send customer confirmation with Contact Admin button (as requested: only appears AFTER receipt is uploaded)
+    customer_markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💌 Moonlight Shop Adminga bog'lanish",
+                    url=f"https://t.me/{clean_contact}",
+                    icon_custom_emoji_id=PREMIUM_BTN_STAR_ID,
+                    style="primary",
+                )
+            ]
+        ]
     )
+    conf_msg = (
+        "✅ <b>To'lov chekingiz qabul qilindi! Adminlar tekshirmoqda... ⏳</b>\n\n"
+        "Adminlarimiz to'lovni tasdiqlashi bilan sizga xabar yuboramiz 🌸\n\n"
+        "<i>Savollaringiz bo'lsa yoki qo'shimcha ma'lumot uchun adminga bog'lanishingiz mumkin:</i>"
+    )
+    try:
+        await message.answer(
+            upgrade_to_premium_emojis(conf_msg),
+            reply_markup=customer_markup,
+            parse_mode="HTML",
+        )
+    except Exception as e_prem:
+        logger.warning(f"Could not send premium emojis in receipt confirmation ({e_prem}); falling back to standard...")
+        fallback_markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💌 Moonlight Shop Adminga bog'lanish",
+                        url=f"https://t.me/{clean_contact}",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            strip_custom_emojis(conf_msg),
+            reply_markup=fallback_markup,
+            parse_mode="HTML",
+        )
 
     # 2. Alert admins with receipt photo / document
     if order_id:

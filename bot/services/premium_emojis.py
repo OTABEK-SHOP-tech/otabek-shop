@@ -12,44 +12,56 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 logger = logging.getLogger(__name__)
 
 # Verified Telegram Premium Custom Emojis (Bot API 7.0+)
-# Unlocked via bot owner's Telegram Premium subscription
+# Tested and confirmed live on Telegram Bot API with bot @moonlight_chinese_bot
 TG_MOON = '<tg-emoji emoji-id="5429099589997184246">🌙</tg-emoji>'
-TG_SAKURA = '<tg-emoji emoji-id="5465119341815027379">🌸</tg-emoji>'
+TG_SAKURA = '<tg-emoji emoji-id="5440354006335495210">🌸</tg-emoji>'
 TG_PARTY = '<tg-emoji emoji-id="5436040291507247633">🎉</tg-emoji>'
 TG_PIN = '<tg-emoji emoji-id="5429270061544130296">📍</tg-emoji>'
 TG_USER = '<tg-emoji emoji-id="5373012449597335010">👤</tg-emoji>'
-TG_PRODUCT = '<tg-emoji emoji-id="5429587463922272406">👛</tg-emoji>'
-TG_STAR = '<tg-emoji emoji-id="5429351167706547656">🌟</tg-emoji>'
+TG_PRODUCT = '<tg-emoji emoji-id="5372917273122054051">👠</tg-emoji>'
+TG_STAR = '<tg-emoji emoji-id="5458799228719472718">🌟</tg-emoji>'
 TG_MONEY = '<tg-emoji emoji-id="5375296873982604963">💰</tg-emoji>'
-TG_CARGO = '<tg-emoji emoji-id="5429388216094444138">🎁</tg-emoji>'
-TG_TIME = '<tg-emoji emoji-id="5431807687136395567">⏰</tg-emoji>'
+TG_CARGO = '<tg-emoji emoji-id="5199749070830197566">🎁</tg-emoji>'
+TG_TIME = '<tg-emoji emoji-id="5451732530048802485">⏳</tg-emoji>'
 TG_SPARKLE = '<tg-emoji emoji-id="5472164874886846699">✨</tg-emoji>'
 TG_FIRE = '<tg-emoji emoji-id="5420315771991497307">🔥</tg-emoji>'
-TG_DIAMOND = '<tg-emoji emoji-id="5429153655045507054">💎</tg-emoji>'
-TG_CROWN = '<tg-emoji emoji-id="5429387335626145566">👑</tg-emoji>'
-TG_RIBBON = '<tg-emoji emoji-id="5429504631183001681">🎀</tg-emoji>'
+TG_DIAMOND = '<tg-emoji emoji-id="5471952986970267163">💎</tg-emoji>'
+TG_CROWN = '<tg-emoji emoji-id="5467406098367521267">👑</tg-emoji>'
+TG_RIBBON = '<tg-emoji emoji-id="5375152498656961898">🎀</tg-emoji>'
 TG_CART = '<tg-emoji emoji-id="5431499171045581032">🛒</tg-emoji>'
-TG_BAGS = '<tg-emoji emoji-id="5373052667671093676">🛍</tg-emoji>'
-TG_PLANE = '<tg-emoji emoji-id="5429402517042566710">✈️</tg-emoji>'
-TG_AUTO = '<tg-emoji emoji-id="5429440624022464104">🚗</tg-emoji>'
-TG_LETTER = '<tg-emoji emoji-id="5429532824707289895">💌</tg-emoji>'
-TG_HEART = '<tg-emoji emoji-id="5429388216094444138">💗</tg-emoji>'
-TG_CHECK = '<tg-emoji emoji-id="5429351167706547656">✅</tg-emoji>'
+TG_BAGS = '<tg-emoji emoji-id="5373052667671093676">🛍️</tg-emoji>'
+TG_PLANE = '<tg-emoji emoji-id="5361600266225326825">✈️</tg-emoji>'
+TG_AUTO = '<tg-emoji emoji-id="5445085952194124000">🚗</tg-emoji>'
+TG_LETTER = '<tg-emoji emoji-id="5472019095106886003">💌</tg-emoji>'
+TG_HEART = '<tg-emoji emoji-id="5434031913260035048">🩷</tg-emoji>'
+TG_CHECK = '<tg-emoji emoji-id="5427009714745517609">✅</tg-emoji>'
+TG_CHECK_BOX = '<tg-emoji emoji-id="5188216731453103384">✔️</tg-emoji>'
+TG_TICKET = '<tg-emoji emoji-id="5377599075237502153">🎟️</tg-emoji>'
+TG_PAW = '<tg-emoji emoji-id="5188308218551475917">🐾</tg-emoji>'
+TG_BANK = '<tg-emoji emoji-id="5264895611517300926">🏦</tg-emoji>'
+TG_DONUT = '<tg-emoji emoji-id="5429604721100866255">🍩</tg-emoji>'
+TG_STRAWBERRY = '<tg-emoji emoji-id="5429261128012154710">🍓</tg-emoji>'
 
-# Premium Button Icon ID
+# Premium Button Icon IDs
 PREMIUM_BTN_BAG_ID = "5373052667671093676"  # Shopping bags from RestrictedEmoji
-PREMIUM_BTN_STAR_ID = "5429351167706547656"  # Glowing star
+PREMIUM_BTN_STAR_ID = "5458799228719472718"  # Glowing star from RestrictedEmoji
 
 # Emoji substitution dictionary for automatic upgrading of any bot post
 EMOJI_TO_PREMIUM = {
     "🌙": TG_MOON,
     "🌸": TG_SAKURA,
     "🎉": TG_PARTY,
+    "🎊": TG_PARTY,
+    "📍": TG_PIN,
     "📌": TG_PIN,
     "👤": TG_USER,
+    "👠": TG_PRODUCT,
     "👗": TG_PRODUCT,
     "💰": TG_MONEY,
+    "💳": TG_BANK,
+    "🏦": TG_BANK,
     "📦": TG_CARGO,
+    "🎁": TG_CARGO,
     "⏳": TG_TIME,
     "⏰": TG_TIME,
     "✨": TG_SPARKLE,
@@ -61,13 +73,26 @@ EMOJI_TO_PREMIUM = {
     "🛍️": TG_BAGS,
     "🛍": TG_BAGS,
     "✈️": TG_PLANE,
+    "✈": TG_PLANE,
     "🚗": TG_AUTO,
     "🚚": TG_AUTO,
     "💌": TG_LETTER,
+    "💖": TG_HEART,
     "💗": TG_HEART,
+    "🩷": TG_HEART,
+    "❤️": TG_HEART,
     "✅": TG_CHECK,
-    "🔹": TG_STAR,
+    "✔️": TG_CHECK_BOX,
+    "✔": TG_CHECK_BOX,
+    "🌟": TG_STAR,
     "⭐": TG_STAR,
+    "🎟️": TG_TICKET,
+    "🎟": TG_TICKET,
+    "🐾": TG_PAW,
+    "🍩": TG_DONUT,
+    "🍓": TG_STRAWBERRY,
+    "📋": TG_PIN,
+    "📸": TG_SPARKLE,
 }
 
 
@@ -116,7 +141,7 @@ def make_premium_button(
     """
     clean_text = text
     # Strip leading emoji if it matches standard emojis so icon_custom_emoji_id takes pride of place
-    for emoji_prefix in ["🛍️", "🛍", "🌸", "✨", "🎀", "👗", "⭐"]:
+    for emoji_prefix in ["🛍️", "🛍", "🌸", "✨", "🎀", "👗", "⭐", "🌟", "💌"]:
         if clean_text.startswith(emoji_prefix):
             clean_text = clean_text[len(emoji_prefix):].strip()
             break
@@ -144,7 +169,7 @@ def fallback_button(
     fallback_prefix: str = "🛍️ ",
 ) -> InlineKeyboardButton:
     """Creates a standard fallback InlineKeyboardButton without custom emoji attributes."""
-    btn_text = text if any(text.startswith(e) for e in ["🛍️", "🛍", "🌸", "✨"]) else f"{fallback_prefix}{text}"
+    btn_text = text if any(text.startswith(e) for e in ["🛍️", "🛍", "🌸", "✨", "💌"]) else f"{fallback_prefix}{text}"
     kwargs: Dict[str, Any] = {"text": btn_text}
     if url:
         kwargs["url"] = url

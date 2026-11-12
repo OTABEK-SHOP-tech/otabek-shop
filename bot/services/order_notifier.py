@@ -84,42 +84,20 @@ async def send_payment_instructions(
         f"<i>To'lov amalga oshirilgach, chek rasmini to'g'ridan-to'g'ri ushbu chatga yuboring</i> 💌"
     )
 
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💌 Moonlight Shop Adminga bog'lanish",
-                    url=f"https://t.me/{clean_contact}",
-                    icon_custom_emoji_id=PREMIUM_BTN_STAR_ID,
-                    style="primary",
-                )
-            ]
-        ]
-    )
-    fallback_markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💌 Moonlight Shop Adminga bog'lanish",
-                    url=f"https://t.me/{clean_contact}",
-                )
-            ]
-        ]
-    )
-
     try:
         try:
             await bot.send_message(
                 chat_id=user_id,
                 text=upgrade_to_premium_emojis(payment_msg),
-                reply_markup=markup,
+                reply_markup=None,
                 parse_mode="HTML",
             )
-        except Exception:
+        except Exception as e_prem:
+            logger.warning(f"Failed to send premium emojis in payment instructions ({e_prem}); falling back to standard...")
             await bot.send_message(
                 chat_id=user_id,
                 text=payment_msg,
-                reply_markup=fallback_markup,
+                reply_markup=None,
                 parse_mode="HTML",
             )
         logger.info(f"Sent payment instructions for order #{order_id} to user {user_id}")
