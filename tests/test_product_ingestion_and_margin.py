@@ -17,7 +17,7 @@ from api.services.telegram_fetcher import (
 )
 from bot.services.channel_post import post_product_to_channel
 from bot.services.premium_emojis import upgrade_to_premium_emojis
-from db.models import Category, Product, Setting
+from db.models import Category, Product, Setting, Admin
 
 
 def test_parse_sizes_various_formats():
@@ -280,6 +280,11 @@ def test_build_channel_caption_adapted_moonlight_style():
     assert "✔️ Otzivlar: @moonlight_shop_otzv" in caption
     assert "@MOONLIGHT_ADMINNN" in caption
 
+    # Check Telegram premium upgrade
+    upgraded = upgrade_to_premium_emojis(caption)
+    assert '<tg-emoji' in upgraded
+    assert '5377599075237502153' in upgraded  # TG_TICKET custom emoji (🎟️)
+
 
 def test_parse_chinese_yuan_prices():
     from api.services.formatters import parse_channel_post
@@ -311,12 +316,6 @@ def test_is_importable_message_chinese_marketplace():
     msg.forward_date = None
 
     assert is_importable_message(msg) is True
-
-
-    # Check Telegram premium upgrade
-    upgraded = upgrade_to_premium_emojis(caption)
-    assert '<tg-emoji' in upgraded
-    assert '5375296873982604963' in upgraded  # Money custom emoji
 
 
 @pytest.mark.asyncio
@@ -384,35 +383,271 @@ def test_build_channel_caption_dual_tariffs_avia_and_avto():
     assert "@MOONLIGHT_ADMINNN" in caption
 
 
-def test_parse_chinese_yuan_prices():
-    from api.services.formatters import parse_channel_post
+@pytest.mark.asyncio
+async def test_customer_photo_not_intercepted_by_admin_import(test_db_session):
+    """
+    Verifies that non-admin customer receipt photos are NOT intercepted by
+    admin.handle_importable_post, ensuring they can reach orders.router.
+    """
+    from bot.handlers.admin import is_admin_message, is_importable_message
+    from aiogram.types import Message, PhotoSize, User as TgUser
 
-    # 35 yuan
-    post1 = "#hoodie 🌸\nNarxi: 35 yuan\nRazmer: S-2XL"
-    parsed1 = parse_channel_post(post1, apply_margin=True)
-    # 35 * 1800 = 63000 UZS source (<80k -> 35% margin) -> 63000 * 1.35 = 85050 -> 85000 UZS retail
-    assert parsed1["source_price"] == 63000
-    assert parsed1["price"] == 85000
+    customer_id = 1122334455
+    admin_id = 9988776655
 
-    # ¥50
-    post2 = "#jempir 🌸\nNarxi: ¥50\nRazmer: Standart"
-    parsed2 = parse_channel_post(post2, apply_margin=True)
-    # 50 * 1800 = 90000 UZS source, +30% = 117000 UZS retail
-    assert parsed2["source_price"] == 90000
-    assert parsed2["price"] == 117000
+    async with test_db_session() as session:
+        session.add(Admin(telegram_id=admin_id, name="Shop Admin", role="admin"))
+        await session.commit()
+
+    # Create customer photo message
+    customer_msg = MagicMock(spec=Message)
+    customer_msg.from_user = MagicMock(spec=TgUser)
+    customer_msg.from_user.id = customer_id
+    customer_msg.photo = [MagicMock(spec=PhotoSize)]
+    customer_msg.caption = None
+    customer_msg.text = None
+    customer_msg.forward_origin = None
+    customer_msg.forward_from_chat = None
+    customer_msg.forward_date = None
+
+    # is_importable_message returns True because photo exists
+    assert is_importable_message(customer_msg) is True
+
+    # BUT is_admin_message filter returns False for customer
+    with patch("bot.handlers.admin.async_session_factory", test_db_session):
+        assert await is_admin_message(customer_msg) is False
+
+    # For admin, is_admin_message returns True
+    admin_msg = MagicMock(spec=Message)
+    admin_msg.from_user = MagicMock(spec=TgUser)
+    admin_msg.from_user.id = admin_id
+    admin_msg.photo = [MagicMock(spec=PhotoSize)]
+    admin_msg.caption = None
+    admin_msg.text = None
+    admin_msg.forward_origin = None
+    admin_msg.forward_from_chat = None
+    admin_msg.forward_date = None
+
+    with patch("bot.handlers.admin.async_session_factory", test_db_session):
+        assert await is_admin_message(admin_msg) is True
 
 
-def test_is_importable_message_chinese_marketplace():
-    from bot.handlers.admin import is_importable_message
-    from unittest.mock import MagicMock
+@pytest.mark.asyncio
+async def test_admin_orders_callback_display(test_db_session):
+    """Tests the admin_orders inline callback displaying recent orders."""
+    from bot.handlers.admin import handle_admin_orders
+    from db.models import Order
+
+    async with test_db_session() as session:
+        session.add(
+            Order(
+                user_id=1001,
+                customer_name="Dilnoza",
+                items_snapshot=[{"product_id": 1, "title": "Pushti Hoodie", "price": 120000, "qty": 1}],
+                total=120000,
+                status="pending_approval",
+            )
+        )
+        await session.commit()
+
+    cb = MagicMock()
+    cb.data = "admin_orders"
+    cb.message = MagicMock()
+    cb.message.edit_text = AsyncMock()
+    cb.answer = AsyncMock()
+
+    with patch("bot.handlers.admin.async_session_factory", test_db_session):
+        await handle_admin_orders(cb)
+
+    cb.message.edit_text.assert_called_once()
+    called_text = cb.message.edit_text.call_args.args[0]
+    assert "Oxirgi buyurtmalar" in called_text
+    assert "Dilnoza" in called_text
+    assert "120.000 so'm" in called_text
+    assert "Tasdiqlash kutilmoqda" in called_text
+    cb.answer.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_menu_navigation_callbacks():
+    """Tests admin menu navigation callbacks admin_menu, admin_main_menu, admin_done."""
+    from bot.handlers.admin import handle_return_admin_menu
+
+    for cb_data in ["admin_menu", "admin_main_menu", "admin_done"]:
+        cb = MagicMock()
+        cb.data = cb_data
+        cb.message = MagicMock()
+        cb.message.edit_text = AsyncMock()
+        cb.answer = AsyncMock()
+        mock_state = AsyncMock()
+
+        await handle_return_admin_menu(cb, state=mock_state)
+
+        mock_state.clear.assert_called_once()
+        cb.message.edit_text.assert_called_once()
+        assert "Admin Paneli" in cb.message.edit_text.call_args.args[0]
+        cb.answer.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_broadcast_flow(test_db_session):
+    """Tests starting broadcast and sending broadcast message to customers."""
+    from bot.handlers.admin import handle_admin_broadcast_start, process_broadcast_message, AdminSettingsState
+    from db.models import User
+
+    # 1. Start broadcast
+    cb = MagicMock()
+    cb.message = MagicMock()
+    cb.message.edit_text = AsyncMock()
+    cb.answer = AsyncMock()
+    mock_state = AsyncMock()
+
+    await handle_admin_broadcast_start(cb, mock_state)
+    mock_state.set_state.assert_called_once_with(AdminSettingsState.waiting_for_broadcast_text)
+    assert "Broadcast" in cb.message.edit_text.call_args.args[0]
+
+    # 2. Process broadcast
+    admin_id = 9988776655
+    async with test_db_session() as session:
+        session.add(Admin(telegram_id=admin_id, name="Admin", role="admin"))
+        session.add(User(telegram_id=111, name="U1"))
+        session.add(User(telegram_id=222, name="U2"))
+        await session.commit()
 
     msg = MagicMock()
+    msg.from_user = MagicMock()
+    msg.from_user.id = admin_id
+    msg.photo = None
+    msg.text = "Yangiliklar va Chegirmalar! 🌸"
+    status_mock = MagicMock()
+    status_mock.edit_text = AsyncMock()
+    msg.answer = AsyncMock(return_value=status_mock)
+
+    with patch("bot.handlers.admin.async_session_factory", test_db_session):
+        with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)):
+            with patch("bot.loader.bot") as mock_bot:
+                mock_bot.send_message = AsyncMock()
+                mock_state_proc = AsyncMock()
+
+                await process_broadcast_message(msg, mock_state_proc)
+
+                mock_state_proc.clear.assert_called_once()
+                assert mock_bot.send_message.call_count == 2
+                status_mock.edit_text.assert_called_once()
+                summary_output = status_mock.edit_text.call_args.args[0]
+                assert "Yetkazildi: <b>2</b>" in summary_output
+
+
+@pytest.mark.asyncio
+async def test_admin_reset_confirm_safely_guarded():
+    """Tests that admin_reset_confirm safely refuses to reset data."""
+    from bot.handlers.admin import handle_admin_reset_confirm
+
+    cb = MagicMock()
+    cb.data = "admin_reset_confirm"
+    cb.answer = AsyncMock()
+
+    await handle_admin_reset_confirm(cb)
+    cb.answer.assert_called_once()
+    assert "xavfsizlik" in cb.answer.call_args.args[0]
+    assert cb.answer.call_args.kwargs.get("show_alert") is True
+
+
+def test_order_notifier_centralized_emojis():
+    """Verifies order_notifier uses verified emojis from premium_emojis."""
+    import bot.services.order_notifier as on
+    import bot.services.premium_emojis as pe
+
+    assert on.TG_MOON == pe.TG_MOON
+    assert on.TG_SAKURA == pe.TG_SAKURA
+    assert on.TG_MONEY == pe.TG_MONEY
+    assert on.TG_PRODUCT == pe.TG_PRODUCT
+    assert on.TG_TIME == pe.TG_TIME
+    assert "5440354006335495210" in on.TG_SAKURA
+
+
+@pytest.mark.asyncio
+async def test_admin_manual_wizard_multi_photo_not_hijacked():
+    """
+    Verifies that when an admin is in ProductWizard.photos, uploading photos
+    delegates to process_wizard_photo and appends to the photo list rather than
+    prematurely hijacking the flow into ProductWizard.price.
+    """
+    from bot.handlers.admin import handle_importable_post, ProductWizard
+    from aiogram.fsm.storage.memory import MemoryStorage
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.base import StorageKey
+
+    storage = MemoryStorage()
+    key = StorageKey(bot_id=1, chat_id=99887766, user_id=99887766)
+    state = FSMContext(storage=storage, key=key)
+    await state.set_state(ProductWizard.photos)
+    await state.update_data(photos=[])
+
+    msg = MagicMock()
+    msg.from_user = MagicMock()
+    msg.from_user.id = 99887766
+    msg.photo = [MagicMock(file_id="photo_step1_1")]
     msg.caption = None
-    msg.text = "https://mobile.yangkeduo.com/goods.html?ps=L9V9tKhosS\nYang keduo"
+    msg.text = None
     msg.forward_origin = None
     msg.forward_from_chat = None
     msg.forward_date = None
+    msg.media_group_id = None
+    msg.answer = AsyncMock()
 
-    assert is_importable_message(msg) is True
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)):
+        await handle_importable_post(msg, state)
+
+    # Must have appended the photo to state data
+    data = await state.get_data()
+    assert "photo_step1_1" in data.get("photos", [])
+    # State MUST remain in ProductWizard.photos for subsequent photos!
+    cur_state = await state.get_state()
+    assert cur_state == ProductWizard.photos.state
+    # Message confirmed photo added
+    msg.answer.assert_called_once()
+    assert "Rasm qo'shildi" in msg.answer.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_admin_broadcast_with_retry_after(test_db_session):
+    """Verifies broadcast handles TelegramRetryAfter exception and retries gracefully."""
+    from bot.handlers.admin import process_broadcast_message
+    from db.models import User
+    from aiogram.exceptions import TelegramRetryAfter
+
+    admin_id = 9988776655
+    async with test_db_session() as session:
+        session.add(Admin(telegram_id=admin_id, name="Admin", role="admin"))
+        session.add(User(telegram_id=555, name="U555"))
+        await session.commit()
+
+    msg = MagicMock()
+    msg.from_user = MagicMock()
+    msg.from_user.id = admin_id
+    msg.photo = None
+    msg.text = "Maxsus e'lon! 🌸"
+    status_mock = MagicMock()
+    status_mock.edit_text = AsyncMock()
+    msg.answer = AsyncMock(return_value=status_mock)
+
+    mock_bot = AsyncMock()
+    retry_exc = TelegramRetryAfter(method=MagicMock(), message="Too many requests", retry_after=0.01)
+    # First call raises TelegramRetryAfter, second call succeeds
+    mock_bot.send_message.side_effect = [retry_exc, AsyncMock()]
+
+    with patch("bot.handlers.admin.async_session_factory", test_db_session), \
+         patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.loader.bot", mock_bot), \
+         patch("asyncio.sleep", AsyncMock()):
+        mock_state = AsyncMock()
+        await process_broadcast_message(msg, mock_state)
+
+        assert mock_bot.send_message.call_count == 2
+        status_mock.edit_text.assert_called_once()
+        summary_output = status_mock.edit_text.call_args.args[0]
+        assert "Yetkazildi: <b>1</b>" in summary_output
+
 
 

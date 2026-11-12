@@ -10,6 +10,16 @@ from bot.services.premium_emojis import (
     make_premium_button,
     PREMIUM_BTN_BAG_ID,
     PREMIUM_BTN_STAR_ID,
+    TG_MOON,
+    TG_PARTY,
+    TG_PIN,
+    TG_USER,
+    TG_PRODUCT,
+    TG_STAR,
+    TG_MONEY,
+    TG_CARGO,
+    TG_TIME,
+    TG_SAKURA,
 )
 from db.models import Admin, Setting, User, Order
 from db.session import async_session_factory
@@ -300,18 +310,6 @@ async def notify_admins_new_receipt(order_id: int) -> None:
 
 DEFAULT_PROOF_CHAT = -1004297799216  # @moonlight_shop_otzv ("Moonlight shop otziv")
 
-# Premium Animated Custom Emojis (Bot API 7.0+ <tg-emoji emoji-id="...">)
-# Unlocked via bot owner's Telegram Premium subscription
-TG_MOON = '<tg-emoji emoji-id="5429099589997184246">🌙</tg-emoji>'
-TG_PARTY = '<tg-emoji emoji-id="5436040291507247633">🎉</tg-emoji>'
-TG_PIN = '<tg-emoji emoji-id="5429270061544130296">📍</tg-emoji>'
-TG_USER = '<tg-emoji emoji-id="5373012449597335010">👤</tg-emoji>'
-TG_PRODUCT = '<tg-emoji emoji-id="5429587463922272406">👛</tg-emoji>'
-TG_STAR = '<tg-emoji emoji-id="5429351167706547656">🌟</tg-emoji>'
-TG_MONEY = '<tg-emoji emoji-id="5375296873982604963">💰</tg-emoji>'
-TG_CARGO = '<tg-emoji emoji-id="5429388216094444138">🎁</tg-emoji>'
-TG_TIME = '<tg-emoji emoji-id="5431807687136395567">⏰</tg-emoji>'
-TG_SAKURA = '<tg-emoji emoji-id="5465119341815027379">🌸</tg-emoji>'
 
 
 async def broadcast_live_order_proof(bot_instance: Any, order: Order, target_chat_override: Optional[Any] = None) -> None:

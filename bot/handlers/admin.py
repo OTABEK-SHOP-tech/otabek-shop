@@ -92,6 +92,11 @@ async def admin_only(event: CallbackQuery) -> bool:
     return event.from_user is not None and await is_user_admin(event.from_user.id)
 
 
+async def is_admin_message(message: Message) -> bool:
+    user_id = message.from_user.id if message.from_user else 0
+    return await is_user_admin(user_id)
+
+
 # All buttons in this router are admin-only (messages are checked in /admin and the forward handler;
 # wizard states are only reachable from admin buttons).
 router.callback_query.filter(admin_only)
@@ -459,15 +464,31 @@ async def process_product_import(
     await show_product_import_summary(message, state)
 
 
-@router.message(StateFilter(None, ProductWizard.photos), is_importable_message)
+@router.message(StateFilter(None, ProductWizard.photos), is_admin_message, is_importable_message)
 async def handle_importable_post(message: Message, state: FSMContext):
     user_id = message.from_user.id if message.from_user else 0
     if not await is_user_admin(user_id):
         return
 
+    # Check if admin is currently in the manual photo upload wizard (ProductWizard.photos)
+    current_state = await state.get_state()
+    if current_state == ProductWizard.photos.state:
+        text = (message.caption or message.text or "").strip()
+        is_fwd = bool(
+            getattr(message, "forward_origin", None)
+            or getattr(message, "forward_from_chat", None)
+            or getattr(message, "forward_date", None)
+        )
+        has_link = bool(extract_telegram_post_links(text) or any(d in text.lower() for d in CHINESE_MARKET_DOMAINS))
+        has_price = bool(re.search(r"(?:yuan|юань|rmb|[¥￥元]|\b\d{4,}\s*(?:so['’`]?m|som))", text, re.IGNORECASE))
+        # If it's a plain photo upload without import signals or media group, delegate to wizard photo collector
+        if not is_fwd and not has_link and not has_price and not getattr(message, "media_group_id", None):
+            await process_wizard_photo(message, state)
+            return
+
     # Handle Media Group (Photo Album)
-    if message.media_group_id:
-        mg_id = message.media_group_id
+    mg_id = getattr(message, "media_group_id", None)
+    if mg_id:
         now = time.time()
         # Clean up processed older than 60s
         for k in list(_processed_media_groups.keys()):
@@ -1186,9 +1207,6 @@ async def handle_admin_settings_menu(callback: CallbackQuery):
                 InlineKeyboardButton(text="🔗 Kanalni ulash", callback_data="admin_link_channel"),
                 InlineKeyboardButton(text="📢 Kanalni uzish", callback_data="admin_unlink_channel"),
             ],
-            [
-                InlineKeyboardButton(text="⚠️ Barcha ma'lumotlarni tozalash", callback_data="admin_reset_confirm"),
-            ],
             [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_menu")],
         ]
     )
@@ -1637,14 +1655,205 @@ async def handle_delete_single_review(callback: CallbackQuery):
     await handle_admin_reviews_list(callback)
 
 
-@router.callback_query(F.data == "admin_menu")
-async def handle_return_admin_menu(callback: CallbackQuery):
-    await callback.message.edit_text("👑 <b>Moonlight Chinese Shop — Admin Paneli</b> 🌸", reply_markup=get_admin_main_keyboard())
+@router.callback_query(F.data.in_(["admin_menu", "admin_main_menu", "admin_done"]))
+async def handle_return_admin_menu(callback: CallbackQuery, state: FSMContext = None):
+    if state:
+        await state.clear()
+    try:
+        await callback.message.edit_text("👑 <b>Moonlight Chinese Shop — Admin Paneli</b> 🌸", reply_markup=get_admin_main_keyboard())
+    except Exception:
+        await callback.message.answer("👑 <b>Moonlight Chinese Shop — Admin Paneli</b> 🌸", reply_markup=get_admin_main_keyboard())
     await callback.answer()
 
 
 @router.callback_query(F.data == "admin_cancel")
 async def handle_admin_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("❌ Jarayon bekor qilindi.", reply_markup=get_admin_main_keyboard())
+    try:
+        await callback.message.edit_text("❌ Jarayon bekor qilindi.", reply_markup=get_admin_main_keyboard())
+    except Exception:
+        await callback.message.answer("❌ Jarayon bekor qilindi.", reply_markup=get_admin_main_keyboard())
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_orders")
+async def handle_admin_orders(callback: CallbackQuery):
+    async with async_session_factory() as session:
+        res = await session.execute(
+            select(Order).order_by(Order.created_at.desc()).limit(8)
+        )
+        orders_list = res.scalars().all()
+
+        pending_count = (await session.execute(
+            select(func.count(Order.id)).where(Order.status.in_(["pending_approval", "awaiting_receipt", "new"]))
+        )).scalar() or 0
+
+    if not orders_list:
+        text = (
+            "🧾 <b>Buyurtmalar:</b> 🌸\n\n"
+            "Hozircha do'konda buyurtmalar mavjud emas.\n\n"
+            "Mijozlar buyurtma berganda bu yerda va Mini App'da ko'rinadi 💗"
+        )
+    else:
+        status_map = {
+            "awaiting_receipt": "Chek kutilmoqda ⏳",
+            "pending_approval": "Tasdiqlash kutilmoqda 📩",
+            "accepted": "Qabul qilingan ✅",
+            "cancelled": "Bekor qilingan ❌",
+            "new": "Yangi 🆕",
+        }
+        text_lines = [
+            f"🧾 <b>Oxirgi buyurtmalar (Jami: {len(orders_list)} ta ko'rsatilmoqda):</b> 🌸\n"
+            f"⏳ <i>Kutilayotgan: {pending_count} ta</i>\n"
+        ]
+        for o in orders_list:
+            st = status_map.get(o.status, o.status)
+            c_name = escape(str(o.customer_name or "Mijoz"))
+            total_fmt = f"{o.total:,}".replace(",", ".")
+            text_lines.append(f"• <b>#{o.id}</b> | {c_name} — {total_fmt} so'm ({st})")
+
+        text_lines.append("\n💡 <i>Buyurtma holatini o'zgartirish va to'liq tafsilotlar uchun Mini App Admin paneliga kiring:</i>")
+        text = "\n".join(text_lines)
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="👑 Mini App'da boshqarish",
+                    web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=admin"),
+                )
+            ],
+            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_menu")],
+        ]
+    )
+    try:
+        await callback.message.edit_text(text, reply_markup=markup)
+    except Exception:
+        await callback.message.answer(text, reply_markup=markup)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_broadcast")
+async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminSettingsState.waiting_for_broadcast_text)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel")]]
+    )
+    try:
+        await callback.message.edit_text(
+            "📣 <b>Barcha mijozlarga xabar yuborish (Broadcast):</b> 🌸\n\n"
+            "Yubormoqchi bo'lgan xabaringizni yozing (matn, rasm yoki post ko'rinishida yuborishingiz mumkin).\n\n"
+            "<i>Bekor qilish uchun '❌ Bekor qilish' tugmasini bosing yoki /cancel yuboring.</i>",
+            reply_markup=cancel_kb,
+        )
+    except Exception:
+        await callback.message.answer(
+            "📣 <b>Barcha mijozlarga xabar yuborish (Broadcast):</b> 🌸\n\n"
+            "Yubormoqchi bo'lgan xabaringizni yozing (matn, rasm yoki post ko'rinishida yuborishingiz mumkin).\n\n"
+            "<i>Bekor qilish uchun '❌ Bekor qilish' tugmasini bosing yoki /cancel yuboring.</i>",
+            reply_markup=cancel_kb,
+        )
+    await callback.answer()
+
+
+@router.message(AdminSettingsState.waiting_for_broadcast_text)
+async def process_broadcast_message(message: Message, state: FSMContext):
+    if not await is_user_admin(message.from_user.id if message.from_user else 0):
+        await state.clear()
+        return
+
+    await state.clear()
+
+    async with async_session_factory() as session:
+        res = await session.execute(select(User.telegram_id))
+        user_ids = res.scalars().all()
+
+    if not user_ids:
+        await message.answer(
+            "ℹ️ Foydalanuvchilar ro'yxati bo'sh.",
+            reply_markup=get_admin_main_keyboard(),
+        )
+        return
+
+    status_msg = await message.answer(f"⏳ Xabar yuborilmoqda... (Jami: {len(user_ids)} ta mijoz)")
+
+    success = 0
+    failed = 0
+
+    from bot.loader import bot
+    from aiogram.exceptions import TelegramRetryAfter
+    if not bot:
+        await status_msg.edit_text(
+            "⚠️ Bot obyekti mavjud emas, xabar yuborilmadi.",
+            reply_markup=get_admin_main_keyboard(),
+        )
+        return
+
+    for uid in user_ids:
+        sent = False
+        for attempt in range(2):
+            try:
+                if message.photo:
+                    try:
+                        await bot.send_photo(
+                            chat_id=uid,
+                            photo=message.photo[-1].file_id,
+                            caption=message.caption,
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        await bot.send_photo(
+                            chat_id=uid,
+                            photo=message.photo[-1].file_id,
+                            caption=message.caption,
+                        )
+                elif message.text:
+                    try:
+                        await bot.send_message(
+                            chat_id=uid,
+                            text=message.text,
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        await bot.send_message(
+                            chat_id=uid,
+                            text=message.text,
+                        )
+                else:
+                    await bot.copy_message(
+                        chat_id=uid,
+                        from_chat_id=message.chat.id,
+                        message_id=message.message_id,
+                    )
+                success += 1
+                sent = True
+                await asyncio.sleep(0.04)
+                break
+            except TelegramRetryAfter as e:
+                logger.warning(f"Rate limited by Telegram during broadcast, sleeping {e.retry_after}s...")
+                await asyncio.sleep(e.retry_after + 0.5)
+                continue
+            except Exception as err:
+                logger.warning(f"Broadcast failed for user {uid}: {err}")
+                break
+        if not sent:
+            failed += 1
+
+    summary_text = (
+        "📣 <b>Broadcast natijasi:</b> 🌸\n\n"
+        f"👥 Jami mijozlar: <b>{len(user_ids)}</b> ta\n"
+        f"✅ Yetkazildi: <b>{success}</b> ta\n"
+        f"⚠️ Yetkazilmadi (bloklangan/xatolik): <b>{failed}</b> ta"
+    )
+    try:
+        await status_msg.edit_text(summary_text, reply_markup=get_admin_main_keyboard())
+    except Exception:
+        await message.answer(summary_text, reply_markup=get_admin_main_keyboard())
+
+
+@router.callback_query(F.data == "admin_reset_confirm")
+async def handle_admin_reset_confirm(callback: CallbackQuery):
+    await callback.answer(
+        "⛔ Ma'lumotlarni tozalash funksiyasi xavfsizlik maqsadida o'chirilgan.",
+        show_alert=True,
+    )

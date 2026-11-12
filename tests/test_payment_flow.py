@@ -475,3 +475,177 @@ async def test_admin_api_order_status_update_parity(client, test_db_session):
         assert "to'lovingiz tasdiqlandi" in c_kwargs["text"].lower() or "qabul qilindi" in c_kwargs["text"].lower()
         btn = c_kwargs["reply_markup"].inline_keyboard[0][0]
         assert "MOONLIGHT_ADMINNN" in btn.url or "t.me/" in btn.url
+
+
+@pytest.mark.asyncio
+async def test_broadcast_live_order_proof_and_fallback(test_db_session):
+    """
+    Verifies that broadcast_live_order_proof creates aesthetic proof
+    with custom emojis, masks customer data for privacy, and gracefully
+    falls back to plain emojis if custom emojis are not supported by the channel.
+    """
+    order = Order(
+        id=77,
+        user_id=123456789,
+        customer_name="Otabek Kholikov",
+        items_snapshot=[
+            {"title": "Anime Hoodie", "qty": 2, "size": "XL", "color": "Pushti"},
+        ],
+        total=250000,
+        estimated_cargo=24000,
+        status="accepted",
+    )
+
+    # 1. Normal run with custom emojis
+    mock_bot = AsyncMock()
+    await broadcast_live_order_proof(mock_bot, order, target_chat_override=-100999888)
+
+    mock_bot.send_message.assert_called_once()
+    call_args = mock_bot.send_message.call_args.kwargs
+    assert call_args["chat_id"] == -100999888
+    sent_text = call_args["text"]
+    assert "Yangi Xarid!" in sent_text
+    assert "Anime Hoodie (XL) [Pushti]" in sent_text
+    assert "250.000 so'm" in sent_text
+    # Privacy masking verification
+    assert "Otabek Kholikov" not in sent_text
+    assert "123456789" not in sent_text
+    from api.services.formatters import mask_customer_name, mask_user_id
+    assert mask_customer_name("Otabek Kholikov") in sent_text
+    assert mask_user_id(123456789) in sent_text
+    # Verified custom emoji tags present
+    assert "<tg-emoji" in sent_text
+
+    # 2. Fallback run when channel forbids custom emojis
+    mock_bot_fallback = AsyncMock()
+    mock_bot_fallback.send_message.side_effect = [
+        RuntimeError("Bad Request: can't use custom emoji"),
+        AsyncMock(),
+    ]
+    await broadcast_live_order_proof(mock_bot_fallback, order, target_chat_override=-100999888)
+    assert mock_bot_fallback.send_message.call_count == 2
+    fallback_text = mock_bot_fallback.send_message.call_args_list[1].kwargs["text"]
+    assert "<tg-emoji" not in fallback_text
+    assert "Yangi Xarid!" in fallback_text
+
+
+@pytest.mark.asyncio
+async def test_customer_receipt_media_group_deduplication(test_db_session):
+    """
+    Verifies that when a customer uploads multiple photos as an album (media group),
+    only 1 confirmation is sent to the customer and admins are alerted only once.
+    """
+    from bot.handlers.orders import handle_receipt_upload
+    from aiogram.fsm.context import FSMContext
+
+    customer_id = 88776655
+    async with test_db_session() as session:
+        session.add(
+            Order(
+                user_id=customer_id,
+                customer_name="Kamola",
+                items_snapshot=[{"product_id": 1, "title": "Kofta", "price": 90000, "qty": 1}],
+                total=90000,
+                status="awaiting_receipt",
+            )
+        )
+        await session.commit()
+
+    mock_state = AsyncMock(spec=FSMContext)
+    mock_state.get_state.return_value = None
+
+    msg1 = MagicMock()
+    msg1.from_user = MagicMock()
+    msg1.from_user.id = customer_id
+    msg1.media_group_id = "album_receipt_999"
+    msg1.photo = [MagicMock(file_id="receipt_photo_part1")]
+    msg1.document = None
+    msg1.answer = AsyncMock()
+
+    msg2 = MagicMock()
+    msg2.from_user = MagicMock()
+    msg2.from_user.id = customer_id
+    msg2.media_group_id = "album_receipt_999"
+    msg2.photo = [MagicMock(file_id="receipt_photo_part2")]
+    msg2.document = None
+    msg2.answer = AsyncMock()
+
+    with patch("bot.handlers.orders.async_session_factory", test_db_session), \
+         patch("bot.services.order_notifier.async_session_factory", test_db_session), \
+         patch("bot.services.order_notifier.notify_admins_new_receipt", AsyncMock()) as mock_notify:
+        # First part of album
+        await handle_receipt_upload(msg1, mock_state)
+        # Second part of album
+        await handle_receipt_upload(msg2, mock_state)
+
+        # Customer answer was called only once for part 1 (part 2 deduplicated)
+        assert msg1.answer.call_count == 1
+        assert msg2.answer.call_count == 0
+        # Admin notified only once
+        assert mock_notify.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_customer_receipt_passes_through_admin_router_e2e(test_db_session):
+    """
+    End-to-end integration test verifying that in an aiogram Dispatcher containing
+    both admin.router and orders.router, a customer payment receipt photo is NOT
+    intercepted by admin.router and is dispatched to orders.handle_receipt_upload,
+    successfully transitioning the order status from awaiting_receipt to pending_approval.
+    """
+    from aiogram import Dispatcher
+    from aiogram.fsm.storage.memory import MemoryStorage
+    from aiogram.types import Update
+    from bot.handlers.admin import router as admin_router
+    from bot.handlers.orders import router as orders_router
+
+    customer_id = 44556677
+    async with test_db_session() as session:
+        session.add(
+            Order(
+                user_id=customer_id,
+                customer_name="Zilola",
+                items_snapshot=[{"product_id": 1, "title": "Kofta", "price": 90000, "qty": 1}],
+                total=90000,
+                status="awaiting_receipt",
+            )
+        )
+        await session.commit()
+
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.include_router(admin_router)
+    dp.include_router(orders_router)
+
+    user = TgUser(id=customer_id, is_bot=False, first_name="Zilola")
+    chat = Chat(id=customer_id, type="private")
+    photo = [PhotoSize(file_id="receipt_photo_e2e", file_unique_id="u_e2e", width=200, height=200)]
+
+    msg = Message(
+        message_id=50,
+        date=1700000000,
+        chat=chat,
+        from_user=user,
+        photo=photo,
+    )
+    update = Update(update_id=1001, message=msg)
+
+    mock_bot = AsyncMock()
+    mock_bot.id = 12345
+    mock_bot.send_message = AsyncMock()
+
+    with patch("bot.handlers.admin.async_session_factory", test_db_session), \
+         patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=False)), \
+         patch("bot.handlers.orders.async_session_factory", test_db_session), \
+         patch("bot.services.order_notifier.async_session_factory", test_db_session), \
+         patch("bot.services.order_notifier.notify_admins_new_receipt", AsyncMock()):
+        await dp.feed_update(mock_bot, update)
+
+    async with test_db_session() as session:
+        res = await session.execute(select(Order).where(Order.user_id == customer_id))
+        order = res.scalars().first()
+        assert order is not None
+        assert order.status == "pending_approval"
+        assert order.receipt_photo_id == "receipt_photo_e2e"
+
+
+

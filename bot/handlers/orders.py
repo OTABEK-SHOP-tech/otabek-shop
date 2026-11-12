@@ -1,4 +1,6 @@
 import logging
+import time
+from typing import Dict
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -17,6 +19,7 @@ router = Router(name="orders")
 logger = logging.getLogger(__name__)
 
 PERMANENT_ADMINS = {8643984824, 8413799379}
+_processed_receipt_media_groups: Dict[str, float] = {}
 
 
 async def edit_admin_message(callback: CallbackQuery, status_badge: str, admin_name: str) -> None:
@@ -49,6 +52,19 @@ async def handle_receipt_upload(message: Message, state: FSMContext):
     cur_state = await state.get_state()
     if cur_state is not None:
         return
+
+    # De-duplicate media groups (albums of multiple receipt photos) so neither
+    # customer nor admins get duplicate notifications for the same submission.
+    mg_id = getattr(message, "media_group_id", None)
+    if mg_id:
+        now = time.time()
+        for k in list(_processed_receipt_media_groups.keys()):
+            if now - _processed_receipt_media_groups[k] > 60:
+                _processed_receipt_media_groups.pop(k, None)
+
+        if mg_id in _processed_receipt_media_groups:
+            return
+        _processed_receipt_media_groups[mg_id] = now
 
     photo_id = None
     is_valid_receipt = False
