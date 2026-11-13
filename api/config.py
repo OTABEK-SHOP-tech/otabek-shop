@@ -41,7 +41,7 @@ class Settings(BaseSettings):
         description="Google Gemini API key for multimodal vision OCR and extraction"
     )
     GEMINI_VISION_MODEL: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-3-flash-preview",
         description="Gemini model for multimodal vision analysis"
     )
     YUAN_TO_UZS_RATE: int = Field(

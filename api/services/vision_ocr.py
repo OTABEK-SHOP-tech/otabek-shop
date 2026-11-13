@@ -18,8 +18,8 @@ from api.services.formatters import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
-FALLBACK_GEMINI_MODEL = "gemini-1.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
+FALLBACK_GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_ENDPOINT_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
@@ -931,8 +931,9 @@ async def extract_product_from_image(
         or DEFAULT_GEMINI_MODEL
     )
     models_to_try = [primary_model]
-    if FALLBACK_GEMINI_MODEL not in models_to_try:
-        models_to_try.append(FALLBACK_GEMINI_MODEL)
+    for backup_m in (FALLBACK_GEMINI_MODEL, "gemini-3.5-flash"):
+        if backup_m not in models_to_try:
+            models_to_try.append(backup_m)
 
     prompt_text = (
         "You are an expert e-commerce product extraction AI for 'Moonlight Chinese Shop' "
