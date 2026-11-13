@@ -36,6 +36,26 @@ class Settings(BaseSettings):
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8001)
     MEDIA_CACHE_DIR: str = Field(default="./media_cache")
+    GEMINI_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Google Gemini API key for multimodal vision OCR and extraction"
+    )
+    GEMINI_VISION_MODEL: str = Field(
+        default="gemini-2.0-flash",
+        description="Gemini model for multimodal vision analysis"
+    )
+    YUAN_TO_UZS_RATE: int = Field(
+        default=1800,
+        description="Conversion rate from Chinese Yuan (¥) to UZS"
+    )
+    USD_TO_UZS_RATE: int = Field(
+        default=12900,
+        description="Conversion rate from USD ($) to UZS"
+    )
+    RUB_TO_UZS_RATE: int = Field(
+        default=140,
+        description="Conversion rate from RUB (₽) to UZS"
+    )
 
     @field_validator("DEV_ADMIN_ID", mode="before")
     @classmethod

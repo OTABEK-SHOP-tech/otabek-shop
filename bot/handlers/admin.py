@@ -1,3 +1,4 @@
+import io
 from html import escape
 import os
 import re
@@ -40,6 +41,7 @@ from api.services.telegram_fetcher import (
     fetch_telegram_post_embed,
     TG_POST_LINK_RE,
 )
+from api.services.vision_ocr import extract_product_from_image
 from bot.keyboards.reply import get_admin_main_keyboard, get_main_reply_keyboard
 from bot.services.channel_post import post_product_to_channel
 from bot.services.ownership import claim_ownership, create_owner_invite
@@ -181,6 +183,49 @@ async def handle_cancel_wizard(message: Message, state: FSMContext):
     await message.answer("👑 Admin menyusi:", reply_markup=get_admin_main_keyboard())
 
 
+# Boost command
+@router.message(Command("boost"), is_admin_message)
+async def handle_boost_command(message: Message, state: Optional[FSMContext] = None):
+    """
+    /boost command: Displays the AI Multimodal Vision Boost status,
+    instructions, and active exchange/margin configuration.
+    If invoked with a photo attached, immediately routes to product import!
+    """
+    if message.photo:
+        await handle_importable_post(message, state)
+        return
+
+    has_gemini = bool(getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY"))
+    model_name = getattr(settings, "GEMINI_VISION_MODEL", "gemini-2.0-flash")
+    yuan_rate = getattr(settings, "YUAN_TO_UZS_RATE", 1800)
+
+    if has_gemini:
+        status_text = (
+            "🚀 <b>AI Multimodal Vision Boost faol!</b> 🌸✨\n\n"
+            f"🤖 <b>Vision Modeli:</b> <code>{model_name}</code>\n"
+            f"💹 <b>Yuan kursi:</b> 1 ¥ = {yuan_rate:,} so'm\n"
+            "📈 <b>Foyda marjasi:</b> 25% – 35% (avtomatik pog'onali)\n\n"
+            "📸 <b>Qanday ishlaydi?</b>\n"
+            "Pinduoduo, 1688, Taobao, Telegram, Instagram yoki istalgan rus/ingliz/xitoy "
+            "do'konidan skrinshotni to'g'ridan-to'g'ri botga yuboring.\n\n"
+            "✨ <b>Bot avtomatik tarzda:</b>\n"
+            "1. 💰 Narxni o'qib, so'mga o'giradi va 25-35% foyda qo'shadi\n"
+            "2. 🐾 Razmerlarni (尺码 / Размеры / Sizes / 均码 -> Standart) ajratadi\n"
+            "3. 🎨 Ranglarni estetik o'zbek nomlariga (Pushti 🌸, Oq 🤍...) tarjima qiladi\n"
+            "4. 🏷️ Kategoriya va nomini aniqlab, bir zumda tayyor kanal posti kartasini chiqaradi!\n\n"
+            "<i>Sinab ko'rish uchun hoziroq mahsulot skrinshotini yuboring! 💌</i>"
+        )
+    else:
+        status_text = (
+            "⚠️ <b>AI Vision Boost API kaliti kiritilmagan</b>\n\n"
+            "Multimodal AI Vision imkoniyatidan to'liq foydalanish uchun <code>.env</code> faylida "
+            "<code>GEMINI_API_KEY</code> ni sozlang.\n"
+            "Hozirda matnli sehrli import va tezkor tugmalar orqali import faol 🌸"
+        )
+
+    await message.answer(upgrade_to_premium_emojis(status_text))
+
+
 # ==================== MAGIC INGESTION: FORWARDS, ALBUMS, LINKS & TEXT ====================
 import time
 
@@ -204,6 +249,8 @@ def is_importable_message(message: Message) -> bool:
     """Detects if message is a candidate for product import or review import."""
     text = (message.caption or message.text or "").strip()
     if text.startswith("/"):
+        if text.lower().startswith("/boost") and message.photo:
+            return True
         return False
 
     # 1. Any photo/screenshot sent by admin is candidate for product import
@@ -396,6 +443,86 @@ async def process_product_import(
     cat_slug = parsed["category"] or "kiyim"
     title = parsed["title"] or f"{cat_slug.capitalize()} 🌸"
 
+    # Multimodal AI Vision extraction if photos are present and any core info is missing
+    if photos and (not source_price or not sizes or not colors):
+        image_bytes: Optional[bytes] = None
+        first_photo = photos[0]
+
+        # 1. Direct bytes
+        if isinstance(first_photo, bytes):
+            image_bytes = first_photo
+        # 2. Local cached image path
+        elif isinstance(first_photo, str) and (Path(first_photo).is_file() or os.path.isfile(first_photo)):
+            try:
+                image_bytes = Path(first_photo).read_bytes()
+            except Exception as e:
+                logger.warning(f"Failed to read local photo {first_photo}: {e}")
+        # 3. Download from Telegram via bot.download
+        elif message.bot and isinstance(first_photo, str):
+            try:
+                dl_res = await message.bot.download(first_photo)
+                if dl_res:
+                    if hasattr(dl_res, "read"):
+                        if hasattr(dl_res, "seek"):
+                            dl_res.seek(0)
+                        image_bytes = dl_res.read()
+                    elif hasattr(dl_res, "getvalue"):
+                        image_bytes = dl_res.getvalue()
+                    elif isinstance(dl_res, bytes):
+                        image_bytes = dl_res
+            except Exception as e:
+                logger.warning(f"Could not download photo {first_photo} via bot: {e}")
+
+        if image_bytes:
+            status_msg = None
+            try:
+                status_msg = await message.answer("🌸 <b>AI Vision skrinshotni tahlil qilmoqda...</b> ✨")
+            except Exception:
+                pass
+
+            try:
+                vision_res = await extract_product_from_image(image_bytes)
+                if vision_res.get("success"):
+                    # Fill missing price
+                    if not source_price and vision_res.get("source_price"):
+                        source_price = vision_res["source_price"]
+                        margin_percent = vision_res.get("margin_percent", 30.0)
+                        retail_price = vision_res.get("retail_price", calculate_retail_price(source_price, margin_percent))
+                    # Fill missing sizes
+                    if not sizes and vision_res.get("sizes"):
+                        sizes = vision_res["sizes"]
+                    # Fill missing colors
+                    if not colors and vision_res.get("colors"):
+                        colors = vision_res["colors"]
+                    # Fill missing or generic title
+                    if (not parsed.get("title") or title == f"{cat_slug.capitalize()} 🌸") and vision_res.get("title"):
+                        title = vision_res["title"]
+                    # Fill category if generic or missing from caption
+                    if ("#" not in raw_text or cat_slug in ("kiyim", "jempir", "")) and vision_res.get("category"):
+                        cat_slug = vision_res["category"]
+                    # Fill cargo rate or weight
+                    if not parsed.get("cargo_rate") and vision_res.get("cargo_rate"):
+                        cargo_rate = vision_res["cargo_rate"]
+                    if not parsed.get("weight_grams") and vision_res.get("weight_grams"):
+                        parsed["weight_grams"] = vision_res["weight_grams"]
+
+                    if "AI Vision" not in source_label:
+                        source_label = f"{source_label} (AI Vision ✨)"
+            except Exception as e:
+                logger.warning(f"AI Vision extraction encountered an issue: {e}")
+            finally:
+                if status_msg:
+                    try:
+                        await status_msg.delete()
+                    except Exception:
+                        pass
+
+    # Clean description: never set description as /boost
+    clean_desc = (raw_text or "").strip()
+    if clean_desc.lower().startswith("/boost"):
+        clean_desc = re.sub(r"^/boost\b\s*", "", clean_desc, flags=re.IGNORECASE).strip()
+    final_desc = clean_desc or title
+
     await state.update_data(
         photos=photos,
         title=title,
@@ -408,9 +535,14 @@ async def process_product_import(
         colors=colors,
         weight_grams=parsed.get("weight_grams"),
         cargo_rate=cargo_rate,
-        description=raw_text,
+        description=final_desc,
         source_label=source_label,
     )
+
+    # Fast-track: if all key info is present (from text or AI Vision), show summary directly!
+    if retail_price and sizes and colors:
+        await show_product_import_summary(message, state)
+        return
 
     # If price was not detected: prompt for price
     if not retail_price:
@@ -481,8 +613,9 @@ async def handle_importable_post(message: Message, state: FSMContext):
         )
         has_link = bool(extract_telegram_post_links(text) or any(d in text.lower() for d in CHINESE_MARKET_DOMAINS))
         has_price = bool(re.search(r"(?:yuan|юань|rmb|[¥￥元]|\b\d{4,}\s*(?:so['’`]?m|som))", text, re.IGNORECASE))
+        is_boost = bool(text.lower().startswith("/boost"))
         # If it's a plain photo upload without import signals or media group, delegate to wizard photo collector
-        if not is_fwd and not has_link and not has_price and not getattr(message, "media_group_id", None):
+        if not is_fwd and not has_link and not has_price and not is_boost and not getattr(message, "media_group_id", None):
             await process_wizard_photo(message, state)
             return
 
@@ -510,12 +643,18 @@ async def handle_importable_post(message: Message, state: FSMContext):
             if not buf:
                 return
             _processed_media_groups[mg_id] = time.time()
+            album_text = buf["text"] or ""
+            source_label = "Sehrli import (Albom)"
+            if album_text.strip().lower().startswith("/boost"):
+                source_label = "AI Vision Boost (Albom) 🚀"
+                album_text = re.sub(r"^/boost\b\s*", "", album_text, flags=re.IGNORECASE).strip()
+
             await process_product_import(
                 message=buf["message"],
                 state=state,
-                raw_text=buf["text"],
+                raw_text=album_text,
                 photos=buf["photos"],
-                source_label="Sehrli import (Albom)",
+                source_label=source_label,
             )
             return
         else:
@@ -535,6 +674,9 @@ async def handle_importable_post(message: Message, state: FSMContext):
         or getattr(message, "forward_date", None)
     )
     source_label = "Kanaldan forward import" if is_fwd else "Sehrli import"
+    if raw_text.strip().lower().startswith("/boost"):
+        source_label = "AI Vision Boost 🚀"
+        raw_text = re.sub(r"^/boost\b\s*", "", raw_text, flags=re.IGNORECASE).strip()
     await process_product_import(
         message=message,
         state=state,
