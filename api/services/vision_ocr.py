@@ -18,8 +18,8 @@ from api.services.formatters import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
-FALLBACK_GEMINI_MODEL = "gemini-3.1-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
+FALLBACK_GEMINI_MODEL = "gemini-3.8-flash"
 GEMINI_ENDPOINT_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
