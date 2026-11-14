@@ -1018,7 +1018,7 @@ async def handle_importable_post(
         if state:
             await state.clear()
 
-    # Handle Media Group (Photo Album)
+    # Handle Media Group or Rapid Photo Uploads (Debounce Collector)
     is_boost_call = getattr(message, "_is_boost", False) is True
     boost_extra = getattr(message, "_boost_text", None)
     if isinstance(boost_extra, str) and boost_extra.strip():
@@ -1029,12 +1029,25 @@ async def handle_importable_post(
     if not isinstance(extra_text, str):
         extra_text = ""
 
-    mg_id = getattr(message, "media_group_id", None)
-    if mg_id:
+    has_photo = bool(
+        message.photo
+        or (
+            message.document
+            and getattr(message.document, "mime_type", None)
+            and str(message.document.mime_type).startswith("image/")
+        )
+    )
+
+    if has_photo:
+        photo_file_id = message.photo[-1].file_id if message.photo else message.document.file_id
+        mg_id = getattr(message, "media_group_id", None)
+        # Unique batch key: Telegram album ID or per-admin photo batch key
+        batch_key = str(mg_id) if mg_id else f"user_{user_id}_photobatch"
+
         now = time.time()
-        # Clean up processed older than 8s
+        # Clean up processed older than 10s
         for k in list(_processed_media_groups.keys()):
-            if now - _processed_media_groups[k] > 8.0:
+            if now - _processed_media_groups[k] > 10.0:
                 _processed_media_groups.pop(k, None)
 
         raw_cap = message.caption if isinstance(message.caption, str) else ""
@@ -1042,82 +1055,75 @@ async def handle_importable_post(
         raw_text_check = (raw_cap or raw_txt or extra_text or "").strip()
         is_boost_caption = bool(is_boost_call or "/boost" in raw_text_check.lower())
 
-        if mg_id in _processed_media_groups and not is_boost_caption:
+        if batch_key in _processed_media_groups and not is_boost_caption:
             return
 
-        if mg_id not in _media_group_buffer:
-            initial_photos = []
-            if message.photo:
-                initial_photos.append(message.photo[-1].file_id)
-            elif (
-                message.document
-                and getattr(message.document, "mime_type", None)
-                and str(message.document.mime_type).startswith("image/")
-            ):
-                initial_photos.append(message.document.file_id)
+        if batch_key in _media_group_buffer:
+            # Subsequent photo arrived in the active batch
+            buf = _media_group_buffer[batch_key]
+            if photo_file_id not in buf["photos"]:
+                buf["photos"].append(photo_file_id)
+            if raw_text_check and not buf["text"]:
+                buf["text"] = raw_text_check
+            buf["last_active"] = time.time()
+            return
 
-            status_msg = None
-            try:
-                status_msg = await message.answer("🔄 <i>Rasm tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
-            except Exception:
-                pass
+        # First photo in this batch
+        status_msg = None
+        try:
+            status_msg = await message.answer("🔄 <i>Rasm(lar) tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
+        except Exception:
+            pass
 
-            _media_group_buffer[mg_id] = {
-                "photos": initial_photos,
-                "text": raw_cap or raw_txt or extra_text or "",
-                "message": message,
-                "status_msg": status_msg,
-            }
-            # Wait for all parts of the album to arrive
-            await asyncio.sleep(0.6)
-            buf = _media_group_buffer.pop(mg_id, None)
-            if not buf:
+        _media_group_buffer[batch_key] = {
+            "photos": [photo_file_id],
+            "text": raw_cap or raw_txt or extra_text or "",
+            "message": message,
+            "status_msg": status_msg,
+            "last_active": time.time(),
+        }
+
+        # Adaptive debounce wait: wait until no new photos arrive for 0.7s (or max 5.0s total)
+        start_wait = time.time()
+        while True:
+            await asyncio.sleep(0.3)
+            current_buf = _media_group_buffer.get(batch_key)
+            if not current_buf:
                 return
-            _processed_media_groups[mg_id] = time.time()
-            buf_text = buf["text"] if isinstance(buf.get("text"), str) else ""
-            album_text = buf_text.strip()
-            if not album_text and extra_text:
-                album_text = extra_text.strip()
-            elif extra_text and extra_text not in album_text:
-                album_text = f"{album_text}\n{extra_text}".strip()
+            idle = time.time() - current_buf["last_active"]
+            total = time.time() - start_wait
+            if idle >= 0.7 or total >= 5.0:
+                break
 
-            source_label = "Sehrli import (Albom)"
-            if is_boost_call or "/boost" in album_text.lower():
-                source_label = "AI Vision Boost (Albom) 🚀"
-                album_text = re.sub(r"(?i)\b/boost\b\s*", "", album_text).strip()
-
-            await process_product_import(
-                message=buf["message"],
-                state=state,
-                raw_text=album_text,
-                photos=buf["photos"],
-                source_label=source_label,
-                status_msg=buf.get("status_msg"),
-            )
+        buf = _media_group_buffer.pop(batch_key, None)
+        if not buf:
             return
-        else:
-            # Subsequent album items
-            if message.photo:
-                _media_group_buffer[mg_id]["photos"].append(message.photo[-1].file_id)
-            elif (
-                message.document
-                and getattr(message.document, "mime_type", None)
-                and str(message.document.mime_type).startswith("image/")
-            ):
-                _media_group_buffer[mg_id]["photos"].append(message.document.file_id)
-            if message.caption and not _media_group_buffer[mg_id]["text"]:
-                _media_group_buffer[mg_id]["text"] = message.caption
-            return
+        _processed_media_groups[batch_key] = time.time()
 
-    # Single message (photo, text, or forward)
-    photos = [message.photo[-1].file_id] if message.photo else []
-    if (
-        not photos
-        and message.document
-        and getattr(message.document, "mime_type", None)
-        and str(message.document.mime_type).startswith("image/")
-    ):
-        photos = [message.document.file_id]
+        buf_text = buf["text"] if isinstance(buf.get("text"), str) else ""
+        album_text = buf_text.strip()
+        if not album_text and extra_text:
+            album_text = extra_text.strip()
+        elif extra_text and extra_text not in album_text:
+            album_text = f"{album_text}\n{extra_text}".strip()
+
+        is_album = len(buf["photos"]) > 1 or bool(mg_id)
+        source_label = "Sehrli import (Albom)" if is_album else "Sehrli import"
+        if is_boost_call or "/boost" in album_text.lower():
+            source_label = "AI Vision Boost (Albom) 🚀" if is_album else "AI Vision Boost 🚀"
+            album_text = re.sub(r"(?i)\b/boost\b\s*", "", album_text).strip()
+
+        await process_product_import(
+            message=buf["message"],
+            state=state,
+            raw_text=album_text,
+            photos=buf["photos"],
+            source_label=source_label,
+            status_msg=buf.get("status_msg"),
+        )
+        return
+
+    # Single message without photo (text or forward)
     raw_caption = message.caption if isinstance(message.caption, str) else ""
     raw_msg_text = message.text if isinstance(message.text, str) else ""
     raw_text = (raw_caption or raw_msg_text or "").strip()
@@ -1140,7 +1146,7 @@ async def handle_importable_post(
         message=message,
         state=state,
         raw_text=raw_text,
-        photos=photos,
+        photos=[],
         source_label=source_label,
     )
 

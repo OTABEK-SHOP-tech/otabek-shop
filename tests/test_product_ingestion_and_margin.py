@@ -1327,6 +1327,66 @@ def test_parse_channel_post_pure_price_not_title():
     assert res["title"] == "Mahsulot 🌸"
 
 
+@pytest.mark.asyncio
+async def test_rapid_ungrouped_photos_collected_into_single_batch():
+    """
+    Verifies that when an admin sends multiple photos rapidly without Telegram media_group_id
+    (e.g. ungrouped drag-and-drop or uncompressed photos), they are automatically collected
+    into a single multi-photo batch, emitting only 1 status message and creating 1 product
+    with all photos included.
+    """
+    import asyncio
+    import time
+    from bot.handlers.admin import handle_importable_post, _media_group_buffer
+    _media_group_buffer.clear()
+
+    msg1 = MagicMock()
+    msg1.from_user = MagicMock(id=998877)
+    msg1.photo = [MagicMock(file_id="photo_batch_1")]
+    msg1.media_group_id = None
+    msg1.caption = None
+    msg1.text = None
+    msg1.answer = AsyncMock()
+
+    msg2 = MagicMock()
+    msg2.from_user = MagicMock(id=998877)
+    msg2.photo = [MagicMock(file_id="photo_batch_2")]
+    msg2.media_group_id = None
+    msg2.caption = None
+    msg2.text = None
+    msg2.answer = AsyncMock()
+
+    msg3 = MagicMock()
+    msg3.from_user = MagicMock(id=998877)
+    msg3.photo = [MagicMock(file_id="photo_batch_3")]
+    msg3.media_group_id = None
+    msg3.caption = None
+    msg3.text = None
+    msg3.answer = AsyncMock()
+
+    state = AsyncMock()
+    state.get_state.return_value = None
+
+    proc_calls = []
+    async def mock_proc(**kwargs):
+        proc_calls.append(kwargs)
+
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.handlers.admin.process_product_import", side_effect=mock_proc):
+        t1 = asyncio.create_task(handle_importable_post(msg1, state))
+        await asyncio.sleep(0.05)
+        t2 = asyncio.create_task(handle_importable_post(msg2, state))
+        await asyncio.sleep(0.05)
+        t3 = asyncio.create_task(handle_importable_post(msg3, state))
+
+        await asyncio.gather(t1, t2, t3)
+
+    assert len(proc_calls) == 1
+    assert proc_calls[0]["photos"] == ["photo_batch_1", "photo_batch_2", "photo_batch_3"]
+    # Only 1 status message sent across all 3 photos!
+    assert (msg1.answer.call_count + msg2.answer.call_count + msg3.answer.call_count) == 1
+
+
 
 
 
