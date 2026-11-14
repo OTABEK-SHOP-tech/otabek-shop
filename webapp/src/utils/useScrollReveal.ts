@@ -7,6 +7,8 @@ export interface UseScrollRevealOptions {
   rootMargin?: string;
   /** Whether animation is disabled (e.g. reduced-motion). When true, reveals immediately. */
   disabled?: boolean;
+  /** Whether animation triggers only once or on every scroll in/out. Default: false (continuous on scroll) */
+  once?: boolean;
 }
 
 export interface UseScrollRevealReturn {
@@ -18,20 +20,20 @@ export interface UseScrollRevealReturn {
 
 /**
  * High-performance, 60fps scroll reveal hook optimized for Telegram Mini App WebViews.
- * - Single-shot trigger (once: true) to eliminate re-render spam during scrolling
- * - Immediate cleanup/unmount on trigger or component unmount to prevent memory leaks
+ * - Continuous re-animation on scroll (once: false) so cards smoothly re-reveal on every scroll
+ * - Immediate cleanup/unmount on component unmount to prevent memory leaks
  * - Settled state management with safety timer fallback to release GPU layers
  * - Safe fallbacks for environments without IntersectionObserver or with reduced-motion
  */
 export function useScrollReveal(options: UseScrollRevealOptions = {}): UseScrollRevealReturn {
-  const { threshold = 0.08, rootMargin = '0px 0px -20px 0px', disabled = false } = options;
+  const { threshold = 0.08, rootMargin = '0px 0px -20px 0px', disabled = false, once = false } = options;
   const [isVisible, setIsVisible] = useState(disabled);
   const [isSettled, setIsSettled] = useState(disabled);
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    // If already revealed and settled, skip observer setup
-    if (isVisible && isSettled) return;
+    // If once is true and already revealed and settled, skip observer setup
+    if (once && isVisible && isSettled) return;
 
     // If motion is disabled by user setting, reveal immediately with no delay
     if (disabled) {
@@ -65,17 +67,21 @@ export function useScrollReveal(options: UseScrollRevealOptions = {}): UseScroll
     if (!node) return;
 
     let observer: IntersectionObserver | null = new IntersectionObserver(
-      (entries) => {
+      (entries, obs) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
             setIsVisible(true);
-            // Single-shot: disconnect immediately on first intersection
-            if (observer) {
-              observer.unobserve(entry.target);
-              observer.disconnect();
+            if (once) {
+              obs.unobserve(entry.target);
+              obs.disconnect();
               observer = null;
+              break;
             }
-            break;
+          } else {
+            if (!once) {
+              setIsVisible(false);
+              setIsSettled(false);
+            }
           }
         }
       },
@@ -98,7 +104,7 @@ export function useScrollReveal(options: UseScrollRevealOptions = {}): UseScroll
         observer = null;
       }
     };
-  }, [disabled, threshold, rootMargin, isVisible, isSettled]);
+  }, [disabled, threshold, rootMargin, once]);
 
   // Safety fallback: once visible, ensure isSettled becomes true even if transitionend was dropped
   useEffect(() => {

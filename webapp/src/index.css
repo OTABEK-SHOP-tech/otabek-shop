@@ -72,6 +72,14 @@
   transform: translateY(0) translateZ(0);
 }
 
+/* Instant reset when leaving viewport so card is primed immediately to re-animate on scroll re-entry */
+.product-card-reveal:not(.is-visible) {
+  opacity: 0;
+  transform: translateY(24px) translateZ(0);
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+}
+
 /* Retain immediate tactile micro-interaction (scale 0.98) on active tap */
 .product-card-reveal.is-visible:active {
   transform: scale(0.98) translateZ(0) !important;
