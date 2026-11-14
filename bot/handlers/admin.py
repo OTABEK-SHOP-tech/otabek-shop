@@ -46,6 +46,7 @@ from api.services.telegram_fetcher import (
     TG_POST_LINK_RE,
 )
 from api.services.vision_ocr import extract_product_from_image, is_phone_screenshot
+from api.services.gemini_assistant import ask_gemini, parse_product_text_with_ai
 from bot.keyboards.reply import get_admin_main_keyboard, get_main_reply_keyboard
 from bot.services.channel_post import post_product_to_channel
 from api.services.cloud_sync import sync_product_to_cloud
@@ -251,24 +252,25 @@ async def handle_boost_command(message: Message, state: Optional[FSMContext] = N
 
     # 4. Show boost status and prompt admin to send a photo
     has_gemini = bool(getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY"))
-    model_name = getattr(settings, "GEMINI_VISION_MODEL", "gemini-3.1-flash-lite")
+    model_name = getattr(settings, "GEMINI_VISION_MODEL", "gemini-3.8-flash")
     yuan_rate = getattr(settings, "YUAN_TO_UZS_RATE", 1800)
 
     if has_gemini:
         status_text = (
-            "🚀 <b>AI Multimodal Vision Boost faol!</b> 🌸✨\n\n"
-            f"🤖 <b>Vision Modeli:</b> <code>{model_name}</code>\n"
+            "🚀 <b>AI Multimodal Vision Boost faol! (Gemini 3.8 Flash High 🧠)</b> 🌸✨\n\n"
+            f"🤖 <b>AI Modeli:</b> <code>{model_name} (High Reasoning)</code>\n"
             f"💹 <b>Yuan kursi:</b> 1 ¥ = {yuan_rate:,} so'm\n"
             "📈 <b>Foyda marjasi:</b> 25% – 35% (avtomatik pog'onali)\n\n"
             "📸 <b>Qanday ishlaydi?</b>\n"
-            "Pinduoduo, 1688, Taobao, Telegram, Instagram yoki istalgan rus/ingliz/xitoy "
-            "do'konidan skrinshotni to'g'ridan-to'g'ri botga yuboring.\n\n"
+            "• Pinduoduo, 1688, Taobao, Telegram, Instagram skrinshotlari (barcha turdagi tovarlar)\n"
+            "• Matnli tovar tavsiflari (ruscha, xitoycha, o'zbekcha matnlar)\n"
+            "• Istalgan savol yoki marketing yordami: <code>/ai &lt;savolingiz&gt;</code>\n\n"
             "✨ <b>Bot avtomatik tarzda:</b>\n"
             "1. 💰 Narxni o'qib, so'mga o'giradi va 25-35% foyda qo'shadi\n"
-            "2. 🐾 Razmerlarni (尺码 / Размеры / Sizes / 均码 -> Standart) ajratadi\n"
+            "2. 🐾 Razmerlarni (kiyimlarda razmerlar, aksessuarlarda Standart) ajratadi\n"
             "3. 🎨 Ranglarni estetik o'zbek nomlariga (Pushti 🌸, Oq 🤍...) tarjima qiladi\n"
             "4. 🏷️ Kategoriya va nomini aniqlab, bir zumda tayyor kanal posti kartasini chiqaradi!\n\n"
-            "<i>Sinab ko'rish uchun hoziroq mahsulot skrinshotini yuboring! 💌</i>"
+            "<i>Sinab ko'rish uchun mahsulot skrinshotini yoki matnini yuboring! 💌</i>"
         )
     else:
         status_text = (
@@ -280,6 +282,43 @@ async def handle_boost_command(message: Message, state: Optional[FSMContext] = N
         )
 
     await message.answer(upgrade_to_premium_emojis(status_text))
+
+
+@router.message(Command("ai", ignore_case=True), is_admin_message)
+async def handle_admin_ai_command(message: Message, command: CommandObject):
+    """
+    Admin command /ai <savol>: consults Gemini 3.8 Flash High for copywriting,
+    product descriptions, customer service replies, or any store task.
+    """
+    prompt = command.args if command else None
+    if not prompt and message.reply_to_message:
+        prompt = message.reply_to_message.text or message.reply_to_message.caption
+
+    if not prompt or not prompt.strip():
+        await message.answer(
+            "🧠 <b>Gemini 3.8 Flash High AI Yordamchisi</b> 🌸\n\n"
+            "Foydalanish: <code>/ai &lt;savol yoki matn&gt;</code>\n"
+            "Masalan:\n"
+            "• <code>/ai Kuzgi jempir uchun chiroyli post matni yozib ber</code>\n"
+            "• <code>/ai Yangi sumkalar uchun 5 ta aesthetic tavsif ber</code>\n"
+            "• <code>/ai Qizil sumka tavsifini o'zbekchaga chiroyli tarjima qil</code>"
+        )
+        return
+
+    wait_msg = await message.answer("🔄 <i>Gemini 3.8 Flash fikrlamoqda...</i> 🌸")
+    res = await ask_gemini(prompt.strip())
+    try:
+        await wait_msg.delete()
+    except Exception:
+        pass
+
+    if res.get("success") and res.get("text"):
+        model_badge = res.get("model_used", "gemini-3.8-flash")
+        await message.answer(
+            f"✨ <b>Gemini AI ({model_badge}):</b>\n\n{res['text']}"
+        )
+    else:
+        await message.answer(f"⚠️ Xatolik yuz berdi: {res.get('error', 'Nomaʼlum xato')}")
 
 
 # ==================== MAGIC INGESTION: FORWARDS, ALBUMS, LINKS & TEXT ====================
@@ -748,9 +787,31 @@ async def process_product_import(
                             parsed["weight_grams"] = vision_res["weight_grams"]
 
                         if "AI Vision" not in source_label:
-                            source_label = f"{source_label} (AI Vision ✨)"
+                            source_label = f"{source_label} (Gemini 3.8 Flash ✨)"
                 except Exception as e:
                     logger.warning(f"AI Vision extraction encountered an issue: {e}")
+
+        # AI Text Analysis if core fields are still missing and text is provided
+        if (not source_price or not sizes or not colors or not cat_slug) and raw_text and len(raw_text.strip()) > 8:
+            try:
+                ai_txt = await parse_product_text_with_ai(raw_text)
+                if ai_txt.get("success"):
+                    if not source_price and ai_txt.get("source_price"):
+                        source_price = ai_txt["source_price"]
+                        margin_percent = ai_txt.get("margin_percent", 30.0)
+                        retail_price = ai_txt.get("retail_price", calculate_retail_price(source_price, margin_percent))
+                    if not sizes and ai_txt.get("sizes"):
+                        sizes = list(ai_txt["sizes"])
+                    if not colors and ai_txt.get("colors"):
+                        colors = list(ai_txt["colors"])
+                    if (not parsed.get("title") or title in (f"{cat_slug.capitalize()} 🌸", "Mahsulot 🌸")) and ai_txt.get("title"):
+                        title = ai_txt["title"]
+                    if (not parsed.get("category") or cat_slug in ("kiyim", "jempir", "")) and ai_txt.get("category"):
+                        cat_slug = ai_txt["category"]
+                    if "Gemini" not in source_label:
+                        source_label = f"{source_label} (Gemini 3.8 Flash ✨)"
+            except Exception as e:
+                logger.warning(f"AI text parsing fallback encountered an issue: {e}")
 
         if is_non_clothing_category(cat_slug):
             if not sizes or sizes == ["Standart"]:

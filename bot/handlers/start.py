@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from api.config import settings
 from api.services.formatters import format_price, calculate_cargo, strip_private_pricing_data
+from api.services.gemini_assistant import answer_customer_support_query
 from bot.keyboards.reply import get_main_reply_keyboard, make_webapp_inline_btn
 from bot.services.premium_emojis import upgrade_to_premium_emojis
 from bot.services.subscription import (
@@ -492,3 +493,52 @@ async def handle_check_subscription(callback: CallbackQuery):
             "⚠️ Siz guruhimizga hali a'zo bo'lmadingiz!\nIltimos, guruhga ham qo'shiling.",
             show_alert=True,
         )
+
+
+@router.message(F.text, F.chat.type == "private")
+async def handle_customer_ai_assistant(message: Message):
+    """
+    Intelligent customer assistant powered by Gemini 3.8 Flash High.
+    Answers any user questions regarding products, prices, delivery, or sizing.
+    Skips commands and admin users (letting admin router handle admin messages).
+    """
+    user_id = message.from_user.id if message.from_user else 0
+    text = (message.text or "").strip()
+
+    # Skip commands
+    if text.startswith("/"):
+        return
+
+    # Skip if message matches any of the main menu buttons
+    if text in ("🆕 Yangi mahsulotlar", "⭐ Fikrlar", "💌 Admin bilan bog'lanish", "📢 Kanal", "🛍 Do'kon"):
+        return
+
+    # Check if user is admin; if so, let admin handlers process
+    async with async_session_factory() as session:
+        if await is_user_admin(session, user_id):
+            return
+
+    # Fetch available products short summary for context
+    prod_summary = ""
+    try:
+        async with async_session_factory() as session:
+            prods_res = await session.execute(
+                select(Product.title, Product.price, Product.category).where(Product.in_stock == True).limit(15)
+            )
+            rows = prods_res.all()
+            if rows:
+                prod_summary = "\n".join(f"- {r[0]} ({r[2]}): {r[1]:,} so'm" for r in rows)
+    except Exception:
+        pass
+
+    reply_text = await answer_customer_support_query(text, current_products_summary=prod_summary)
+
+    webapp_url = settings.WEBAPP_URL or "https://bek-style-shop.onrender.com"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛍 Do'konni ochish", web_app=WebAppInfo(url=webapp_url))],
+            [InlineKeyboardButton(text="💌 Adminga yozish", url="https://t.me/MOONLIGHT_ADMINNN")],
+        ]
+    )
+
+    await message.answer(upgrade_to_premium_emojis(reply_text), reply_markup=kb)

@@ -18,11 +18,20 @@ from api.services.formatters import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
-FALLBACK_GEMINI_MODEL = "gemini-3.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+FALLBACK_GEMINI_MODEL = "gemini-3.6-flash"
 GEMINI_ENDPOINT_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
+GEMINI_FALLBACK_CASCADE = [
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-flash-lite-latest",
+]
 
 # Categories that naturally do not have garment sizing (or are one-size)
 ONE_SIZE_CATEGORIES = {"sumka", "aksessuar", "kosmetika", "wig", "scarf", "soat", "dekor"}
@@ -731,6 +740,7 @@ def parse_vision_response(
     yuan_rate: Optional[int] = None,
     usd_rate: Optional[int] = None,
     rub_rate: Optional[int] = None,
+    model_used: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Normalizes parsed JSON response from Gemini Vision:
@@ -862,6 +872,7 @@ def parse_vision_response(
         "cargo_rate": cargo_rate,
         "weight_grams": weight_grams,
         "is_spec_screenshot": is_spec_screenshot,
+        "model_used": model_used,
         "raw_data": data,
     }
 
@@ -980,7 +991,7 @@ async def extract_product_from_image(
         or DEFAULT_GEMINI_MODEL
     )
     models_to_try = [primary_model]
-    for backup_m in (FALLBACK_GEMINI_MODEL, "gemini-3-flash-preview", "gemini-flash-latest", "gemini-flash-lite-latest"):
+    for backup_m in GEMINI_FALLBACK_CASCADE:
         if backup_m not in models_to_try:
             models_to_try.append(backup_m)
 
@@ -1023,7 +1034,7 @@ async def extract_product_from_image(
         "}"
     )
 
-    payload = {
+    base_payload = {
         "contents": [
             {
                 "parts": [
@@ -1037,10 +1048,6 @@ async def extract_product_from_image(
                 ]
             }
         ],
-        "generationConfig": {
-            "temperature": 0.1,
-            "response_mime_type": "application/json",
-        },
     }
 
     last_error: Optional[str] = None
@@ -1048,40 +1055,68 @@ async def extract_product_from_image(
     async with httpx.AsyncClient(timeout=timeout) as client:
         for target_model in models_to_try:
             url = f"{GEMINI_ENDPOINT_TEMPLATE.format(model=target_model)}?key={resolved_key}"
-            try:
-                resp = await client.post(url, json=payload)
-                if resp.status_code == 200:
-                    resp_json = resp.json()
-                    candidates = resp_json.get("candidates", [])
-                    if not candidates:
-                        last_error = "Gemini returned empty candidates"
+
+            # Try first with high-level thinking budget (1024), fall back to standard if model rejects thinkingConfig
+            payload_candidates = [
+                {
+                    **base_payload,
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "response_mime_type": "application/json",
+                        "thinkingConfig": {"thinkingBudget": 1024},
+                    },
+                },
+                {
+                    **base_payload,
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "response_mime_type": "application/json",
+                    },
+                },
+            ]
+
+            for payload in payload_candidates:
+                try:
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        resp_json = resp.json()
+                        candidates = resp_json.get("candidates", [])
+                        if not candidates:
+                            last_error = f"Gemini ({target_model}) returned empty candidates"
+                            break
+
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if not parts:
+                            last_error = f"Gemini ({target_model}) returned empty parts"
+                            break
+
+                        raw_text = parts[0].get("text", "").strip()
+                        m_json = re.search(r"\{.*\}", raw_text, re.DOTALL)
+                        json_str = m_json.group(0) if m_json else raw_text
+
+                        parsed_dict = json.loads(json_str)
+                        return parse_vision_response(
+                            parsed_dict,
+                            yuan_rate=yuan_rate,
+                            usd_rate=usd_rate,
+                            rub_rate=rub_rate,
+                            model_used=target_model,
+                        )
+                    elif resp.status_code == 400 and "thinkingConfig" in str(resp.text):
+                        # Retry without thinkingConfig for this model
                         continue
-
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if not parts:
-                        last_error = "Gemini returned empty parts"
-                        continue
-
-                    raw_text = parts[0].get("text", "").strip()
-                    # Robust extraction of JSON object even if surrounded by commentary
-                    m_json = re.search(r"\{.*\}", raw_text, re.DOTALL)
-                    json_str = m_json.group(0) if m_json else raw_text
-
-                    parsed_dict = json.loads(json_str)
-                    return parse_vision_response(
-                        parsed_dict,
-                        yuan_rate=yuan_rate,
-                        usd_rate=usd_rate,
-                        rub_rate=rub_rate,
-                    )
-                else:
-                    last_error = f"Gemini API ({target_model}) returned status {resp.status_code}: {resp.text[:200]}"
-                    logger.warning(f"Gemini API ({target_model}) error: {last_error}")
-            except httpx.TimeoutException:
-                last_error = f"Gemini API ({target_model}) request timed out"
-                logger.warning(last_error)
-            except Exception as e:
-                last_error = f"Gemini API ({target_model}) call failed: {e}"
+                    else:
+                        last_error = f"Gemini API ({target_model}) returned status {resp.status_code}: {resp.text[:200]}"
+                        logger.warning(f"Gemini API ({target_model}) error: {last_error}")
+                        break
+                except httpx.TimeoutException:
+                    last_error = f"Gemini API ({target_model}) request timed out"
+                    logger.warning(last_error)
+                    break
+                except Exception as e:
+                    last_error = f"Gemini API ({target_model}) call failed: {e}"
+                    logger.warning(last_error)
+                    break
                 logger.warning(last_error)
 
     return {
