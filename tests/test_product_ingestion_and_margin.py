@@ -1323,7 +1323,8 @@ def test_parse_channel_post_pure_price_not_title():
     res = parse_channel_post("30 yuan", apply_margin=True)
     assert res["source_price"] == 54000
     assert res["title"] != "30 yuan"
-    assert "Jempir" in res["title"]
+    assert "30" not in res["title"]
+    assert res["title"] == "Mahsulot 🌸"
 
 
 

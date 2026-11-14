@@ -307,6 +307,12 @@ def is_importable_message(message: Message) -> bool:
     # 1. Any photo/screenshot sent by admin is candidate for product import
     if message.photo:
         return True
+    if (
+        message.document
+        and getattr(message.document, "mime_type", None)
+        and str(message.document.mime_type).startswith("image/")
+    ):
+        return True
 
     # 2. Boost command in text or caption
     if text.lower().startswith("/boost"):
@@ -528,365 +534,397 @@ async def process_product_import(
     raw_text: str,
     photos: List[str],
     source_label: str = "Sehrli import",
+    status_msg: Optional[Message] = None,
 ):
-    # Check if this is a review screenshot (#отзыв)
-    if photos and ("#отзыв" in raw_text.lower() or "fikr" in raw_text.lower() or "rahmat" in raw_text.lower()):
-        customer_name = (
-            getattr(message, "forward_sender_name", None)
-            or (message.from_user.full_name if message.from_user else "Mijoz 💌")
-        )
-        async with async_session_factory() as session:
-            rev = Review(
-                customer_name=customer_name,
-                text=raw_text.replace("#отзыв", "").strip() or "Mijoz fikri 🌸",
-                photos=photos,
-                approved=True,
+    try:
+        # Check if this is a review screenshot (#отзыв)
+        if photos and ("#отзыв" in raw_text.lower() or "fikr" in raw_text.lower() or "rahmat" in raw_text.lower()):
+            customer_name = (
+                getattr(message, "forward_sender_name", None)
+                or (message.from_user.full_name if message.from_user else "Mijoz 💌")
             )
-            session.add(rev)
-            await session.commit()
-        await message.answer("⭐ <b>Mijoz fikri (#отзыв) avtomatik saqlandi va tasdiqlandi!</b> 🌸")
-        return
-
-    # Check for Chinese marketplace links without photos (e.g. Pinduoduo / Yangkeduo)
-    if not photos and any(domain in raw_text.lower() for domain in CHINESE_MARKET_DOMAINS):
-        platform_name = (
-            "Pinduoduo (Yang Ke Duo) 🇨🇳"
-            if "yangkeduo" in raw_text.lower() or "pinduoduo" in raw_text.lower()
-            else (
-                "1688 (Alibaba) 🇨🇳"
-                if "1688" in raw_text.lower()
-                else (
-                    "Taobao 🇨🇳"
-                    if "taobao" in raw_text.lower() or "tb.cn" in raw_text.lower()
-                    else "Xitoy savdo platformasi 🇨🇳"
+            async with async_session_factory() as session:
+                rev = Review(
+                    customer_name=customer_name,
+                    text=raw_text.replace("#отзыв", "").strip() or "Mijoz fikri 🌸",
+                    photos=photos,
+                    approved=True,
                 )
-            )
-        )
-        m_goods = re.search(r"(?:goods_id|id)=(\d+)|ps=([A-Za-z0-9]+)", raw_text, re.IGNORECASE)
-        ref_id = (m_goods.group(1) or m_goods.group(2)) if m_goods else "Aniqlangan"
-
-        guide_msg = (
-            f"🌸 <b>{platform_name} tovar havolasi qabul qilindi!</b> ✨\n\n"
-            f"🆔 <b>Mahsulot kodi / ID:</b> <code>{ref_id}</code>\n\n"
-            f"ℹ️ <i>Eslatma: Pinduoduo va Xitoy ilovalari o'z ichki tizimida bo'lgani sababli, tovar rasmi va narxini tashqi botlar to'g'ridan-to'g'ri o'qiy olmaydi (login talab qiladi).</i>\n\n"
-            f"📸 <b>Ushbu tovarni do'konga qo'shish va kanalga chiqarish uchun:</b>\n"
-            f"1. Pinduoduo ilovasidan mahsulot <b>rasmini (yoki skrinshotini)</b> ushbu botga yuboring.\n"
-            f"2. Tagiga esa Xitoydagi narxini yozing (masalan: <code>28 yuan</code> yoki <code>¥35</code>) yoki so'mdagi narxini <code>50.000 so'm</code>.\n\n"
-            f"💰 Bot avtomatik ravishda Yuanni so'mga o'girib, <b>30% foyda</b> qo'shadi, <b>AVTO (10.000 so'm)</b> va <b>AVIA (14.000 so'm)</b> kargo tariflarini biriktirib, <b>Premium stikerlar</b> bilan kanalga tayyorlab beradi! 💌"
-        )
-        markup = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="➕ Qo'lda tovar qo'shish", callback_data="admin_add_product"),
-                ]
-            ]
-        )
-        await message.answer(upgrade_to_premium_emojis(guide_msg), reply_markup=markup)
-        return
-
-    # 1. Check if text contains Telegram post link
-    tg_links = extract_telegram_post_links(raw_text)
-    if tg_links and not photos:
-        link_info = tg_links[0]
-        if link_info["is_private"]:
-            await message.answer(
-                "⚠️ <b>Yopiq (shaxsiy) kanal havolasi aniqlandi.</b>\n\n"
-                "Telegram cheklovlari sababli yopiq kanal havolasidan to'g'ridan-to'g'ri yuklab bo'lmaydi.\n"
-                "Iltimos, ushbu postni o'sha kanaldan to'g'ridan-to'g'ri bu yerga <b>forward</b> qiling yoki rasmi bilan matnini yuboring 🌸"
-            )
-            return
-
-        status_msg = await message.answer("🔄 <b>Havola tahlil qilinmoqda va rasmlar yuklanmoqda...</b>")
-        embed_data = await fetch_telegram_post_embed(link_info["chat_ref"], link_info["message_id"])
-        try:
-            await status_msg.delete()
-        except Exception:
-            pass
-
-        if not embed_data["success"]:
-            await message.answer(
-                f"⚠️ <b>Havoladan ma'lumot yuklab bo'lmadi:</b>\n{embed_data.get('error')}\n\n"
-                "Iltimos, postni to'g'ridan-to'g'ri botga <b>forward</b> qiling yoki matn/rasmlarni yuboring 🌸"
-            )
-            return
-
-        raw_text = embed_data["raw_text"] or raw_text
-        photos = embed_data["photos"] or photos
-        source_label = f"Havola orqali import (@{link_info['chat_ref']}/{link_info['message_id']})"
-
-    # 2. Parse product channel post with 25%-35% profit margin
-    parsed = parse_channel_post(raw_text, apply_margin=True)
-    source_price = parsed["source_price"]
-    retail_price = parsed["retail_price"]
-    margin_percent = parsed["margin_percent"]
-    sizes = parsed["sizes"]
-    colors = parsed.get("colors", [])
-    cargo_rate = parsed.get("cargo_rate", 12000)
-    cat_slug = parsed["category"] or "kiyim"
-    title = parsed["title"] or f"{cat_slug.capitalize()} 🌸"
-
-    spec_photo_refs: set = set()
-    ocr_spec_photo = None
-    photos_to_check = []
-    status_msg = None
-
-    if photos:
-        try:
-            status_msg = await message.answer("🔄 <i>Rasm tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
-        except Exception:
-            pass
-
-    # Multimodal AI Vision extraction if photos are present and any core info is missing or generic
-    if photos and (not source_price or not sizes or not colors or sizes == ["Standart"] or len(colors) <= 1):
-        # In multi-photo albums, inspect all album photos:
-        # last photo first (where Pinduoduo/Taobao screenshots usually are),
-        # then check the first photo (where the main model photo usually is),
-        # then any middle photos until price and sizes/colors are found.
-        if len(photos) > 1:
-            photos_to_check.append(photos[-1])
-            if photos[0] not in photos_to_check:
-                photos_to_check.append(photos[0])
-            for p in photos[1:-1]:
-                if p not in photos_to_check:
-                    photos_to_check.append(p)
-        elif photos:
-            photos_to_check = [photos[0]]
-
-        for photo_item in photos_to_check:
-            # If price, sizes and colors are all found (and not generic Standart), stop early
-            if source_price and sizes and colors and sizes != ["Standart"]:
-                break
-
-            image_bytes: Optional[bytes] = None
-            photo_ref = photo_item.file_id if hasattr(photo_item, "file_id") else photo_item
-            if isinstance(photo_ref, bytes):
-                image_bytes = photo_ref
-            elif isinstance(photo_ref, str) and (Path(photo_ref).is_file() or os.path.isfile(photo_ref)):
+                session.add(rev)
+                await session.commit()
+            if status_msg:
                 try:
-                    image_bytes = Path(photo_ref).read_bytes()
-                except Exception as e:
-                    logger.warning(f"Failed to read local photo {photo_ref}: {e}")
-            elif message.bot and isinstance(photo_ref, str):
-                try:
-                    dl_res = await message.bot.download(photo_ref)
-                    if dl_res:
-                        if hasattr(dl_res, "read"):
-                            if hasattr(dl_res, "seek"):
-                                dl_res.seek(0)
-                            image_bytes = dl_res.read()
-                        elif hasattr(dl_res, "getvalue"):
-                            image_bytes = dl_res.getvalue()
-                        elif isinstance(dl_res, bytes):
-                            image_bytes = dl_res
-                except Exception as e:
-                    logger.warning(f"Could not download photo {photo_ref} via bot: {e}")
-
-            if not image_bytes:
-                continue
-
-            if image_bytes and is_phone_screenshot(image_bytes):
-                spec_photo_refs.add(photo_ref)
-
-            if not status_msg:
-                try:
-                    status_msg = await message.answer("🌸 <b>AI Vision skrinshotni tahlil qilmoqda...</b> ✨")
+                    await status_msg.delete()
                 except Exception:
                     pass
+            await message.answer("⭐ <b>Mijoz fikri (#отзыв) avtomatik saqlandi va tasdiqlandi!</b> 🌸")
+            return
 
-            try:
-                vision_res = await extract_product_from_image(image_bytes)
-                if vision_res.get("success"):
-                    if vision_res.get("is_spec_screenshot") or vision_res.get("source_price"):
-                        spec_photo_refs.add(photo_ref)
-                        if photo_item == photos[-1] and len(photos) > 1:
-                            ocr_spec_photo = photo_ref
-
-                    # Fill missing price
-                    if not source_price and vision_res.get("source_price"):
-                        source_price = vision_res["source_price"]
-                        margin_percent = vision_res.get("margin_percent", 30.0)
-                        retail_price = vision_res.get("retail_price", calculate_retail_price(source_price, margin_percent))
-                    # Fill / improve sizes
-                    v_sizes = vision_res.get("sizes")
-                    if v_sizes:
-                        if not sizes or sizes == ["Standart"]:
-                            sizes = list(v_sizes)
-                        elif len(v_sizes) > len(sizes):
-                            sizes = list(v_sizes)
-                    # Fill / accumulate colors across album photos
-                    v_colors = vision_res.get("colors")
-                    if v_colors:
-                        if not colors:
-                            colors = list(v_colors)
-                        else:
-                            for c in v_colors:
-                                if c not in colors:
-                                    colors.append(c)
-                    # Fill missing or generic title
-                    if (not parsed.get("title") or title == f"{cat_slug.capitalize()} 🌸") and vision_res.get("title"):
-                        title = vision_res["title"]
-                    # Fill category if generic or missing from caption
-                    if ("#" not in raw_text or cat_slug in ("kiyim", "jempir", "")) and vision_res.get("category"):
-                        cat_slug = vision_res["category"]
-                    # Fill cargo rate or weight
-                    if not parsed.get("cargo_rate") and vision_res.get("cargo_rate"):
-                        cargo_rate = vision_res["cargo_rate"]
-                    if not parsed.get("weight_grams") and vision_res.get("weight_grams"):
-                        parsed["weight_grams"] = vision_res["weight_grams"]
-
-                    if "AI Vision" not in source_label:
-                        source_label = f"{source_label} (AI Vision ✨)"
-            except Exception as e:
-                logger.warning(f"AI Vision extraction encountered an issue: {e}")
-
-    if is_non_clothing_category(cat_slug):
-        if not sizes or sizes == ["Standart"]:
-            sizes = ["Standart"]
-        if not colors:
-            colors = ["Rasmda ko'rsatilgan"]
-
-    if status_msg:
-        try:
-            await status_msg.delete()
-        except Exception:
-            pass
-        status_msg = None
-
-    # Clean product photos: if there are model photos and a spec/checkout screenshot,
-    # EXCLUDE the spec screenshot from product.photos! Only keep clean clothing/model photos for the customer post.
-    if photos and len(photos) > 1:
-        # Check all photos in album for phone screenshots (aspect ratio >= 1.65)
-        for p_item in photos:
-            p_ref = p_item.file_id if hasattr(p_item, "file_id") else p_item
-            if p_ref not in spec_photo_refs:
-                p_bytes = None
-                if isinstance(p_ref, bytes):
-                    p_bytes = p_ref
-                elif isinstance(p_ref, str) and (Path(p_ref).is_file() or os.path.isfile(p_ref)):
-                    try:
-                        p_bytes = Path(p_ref).read_bytes()
-                    except Exception:
-                        pass
-                elif message.bot and isinstance(p_ref, str):
-                    try:
-                        dl = await message.bot.download(p_ref)
-                        if dl:
-                            if hasattr(dl, "read"):
-                                if hasattr(dl, "seek"):
-                                    dl.seek(0)
-                                p_bytes = dl.read()
-                            elif hasattr(dl, "getvalue"):
-                                p_bytes = dl.getvalue()
-                    except Exception:
-                        pass
-                if p_bytes and is_phone_screenshot(p_bytes):
-                    spec_photo_refs.add(p_ref)
-
-        clean_photos = [
-            p for p in photos
-            if (p.file_id if hasattr(p, "file_id") else p) not in spec_photo_refs
-        ]
-        if clean_photos and len(clean_photos) < len(photos):
-            logger.info(
-                f"Excluded {len(photos) - len(clean_photos)} Chinese spec/checkout screenshot(s) from product photos."
+        # Check for Chinese marketplace links without photos (e.g. Pinduoduo / Yangkeduo)
+        if not photos and any(domain in raw_text.lower() for domain in CHINESE_MARKET_DOMAINS):
+            platform_name = (
+                "Pinduoduo (Yang Ke Duo) 🇨🇳"
+                if "yangkeduo" in raw_text.lower() or "pinduoduo" in raw_text.lower()
+                else (
+                    "1688 (Alibaba) 🇨🇳"
+                    if "1688" in raw_text.lower()
+                    else (
+                        "Taobao 🇨🇳"
+                        if "taobao" in raw_text.lower() or "tb.cn" in raw_text.lower()
+                        else "Xitoy savdo platformasi 🇨🇳"
+                    )
+                )
             )
-            photos = clean_photos
-        elif ocr_spec_photo and len(photos) > 1:
-            clean_candidates = [
-                p for p in photos
-                if (p.file_id if hasattr(p, "file_id") else p) != ocr_spec_photo
-            ]
-            if clean_candidates:
-                photos = clean_candidates
-                logger.info("Excluded OCR spec screenshot from product photos.")
-        elif len(photos) > 1 and source_price and photos_to_check and photos_to_check[0] == photos[-1]:
-            # The last photo in the album was inspected for specs/pricing
-            photos = photos[:-1]
-            logger.info("Excluded last photo (used for spec extraction) from product photos.")
+            m_goods = re.search(r"(?:goods_id|id)=(\d+)|ps=([A-Za-z0-9]+)", raw_text, re.IGNORECASE)
+            ref_id = (m_goods.group(1) or m_goods.group(2)) if m_goods else "Aniqlangan"
 
-    # Clean description: never set description as /boost
-    clean_desc = (raw_text or "").strip()
-    if clean_desc.lower().startswith("/boost"):
-        clean_desc = re.sub(r"^/boost\b\s*", "", clean_desc, flags=re.IGNORECASE).strip()
-    clean_desc = strip_private_pricing_data(clean_desc)
-    clean_title = strip_private_pricing_data(title) or title
-    final_desc = clean_desc or clean_title
+            guide_msg = (
+                f"🌸 <b>{platform_name} tovar havolasi qabul qilindi!</b> ✨\n\n"
+                f"🆔 <b>Mahsulot kodi / ID:</b> <code>{ref_id}</code>\n\n"
+                f"ℹ️ <i>Eslatma: Pinduoduo va Xitoy ilovalari o'z ichki tizimida bo'lgani sababli, tovar rasmi va narxini tashqi botlar to'g'ridan-to'g'ri o'qiy olmaydi (login talab qiladi).</i>\n\n"
+                f"📸 <b>Ushbu tovarni do'konga qo'shish va kanalga chiqarish uchun:</b>\n"
+                f"1. Pinduoduo ilovasidan mahsulot <b>rasmini (yoki skrinshotini)</b> ushbu botga yuboring.\n"
+                f"2. Tagiga esa Xitoydagi narxini yozing (masalan: <code>28 yuan</code> yoki <code>¥35</code>) yoki so'mdagi narxini <code>50.000 so'm</code>.\n\n"
+                f"💰 Bot avtomatik ravishda Yuanni so'mga o'girib, <b>30% foyda</b> qo'shadi, <b>AVTO (10.000 so'm)</b> va <b>AVIA (14.000 so'm)</b> kargo tariflarini biriktirib, <b>Premium stikerlar</b> bilan kanalga tayyorlab beradi! 💌"
+            )
+            markup = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="➕ Qo'lda tovar qo'shish", callback_data="admin_add_product"),
+                    ]
+                ]
+            )
+            if status_msg:
+                try:
+                    await status_msg.delete()
+                except Exception:
+                    pass
+            await message.answer(upgrade_to_premium_emojis(guide_msg), reply_markup=markup)
+            return
 
-    if state is not None:
-        await state.update_data(
-            photos=photos,
-            title=clean_title,
-            price=retail_price,
-            source_price=source_price,
-            margin_percent=margin_percent,
-            old_price=parsed.get("old_price"),
-            category=cat_slug,
-            sizes=sizes,
-            colors=colors,
-            weight_grams=parsed.get("weight_grams"),
-            cargo_rate=cargo_rate,
-            description=final_desc,
-            source_label=source_label,
-        )
+        # 1. Check if text contains Telegram post link
+        tg_links = extract_telegram_post_links(raw_text)
+        if tg_links and not photos:
+            link_info = tg_links[0]
+            if link_info["is_private"]:
+                if status_msg:
+                    try:
+                        await status_msg.delete()
+                    except Exception:
+                        pass
+                await message.answer(
+                    "⚠️ <b>Yopiq (shaxsiy) kanal havolasi aniqlandi.</b>\n\n"
+                    "Telegram cheklovlari sababli yopiq kanal havolasidan to'g'ridan-to'g'ri yuklab bo'lmaydi.\n"
+                    "Iltimos, ushbu postni o'sha kanaldan to'g'ridan-to'g'ri bu yerga <b>forward</b> qiling yoki rasmi bilan matnini yuboring 🌸"
+                )
+                return
 
-    # Require at least one product photo! Never allow text-only products without photos
-    if not photos:
-        if state is not None:
-            await state.set_state(ProductWizard.photos)
-        await message.answer(
-            "📸 <b>Mahsulot rasmini yuboring:</b>\n\n"
-            "Kanalga tovar chiqarish uchun rasm bo'lishi shart 🌸\n"
-            "Iltimos, mahsulot rasmini (yoki rasm albomini) yuboring:",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
-                resize_keyboard=True,
-            ),
-        )
-        return
+            link_status_msg = await message.answer("🔄 <b>Havola tahlil qilinmoqda va rasmlar yuklanmoqda...</b>")
+            embed_data = await fetch_telegram_post_embed(link_info["chat_ref"], link_info["message_id"])
+            try:
+                await link_status_msg.delete()
+            except Exception:
+                pass
 
-    # Fast-track: if photos and all key info are present (from text or AI Vision), show summary directly!
-    if photos and retail_price and sizes and colors:
-        if state is not None:
-            await show_product_import_summary(message, state)
-        return
+            if not embed_data["success"]:
+                await message.answer(
+                    f"⚠️ <b>Havoladan ma'lumot yuklab bo'lmadi:</b>\n{embed_data.get('error')}\n\n"
+                    "Iltimos, postni to'g'ridan-to'g'ri botga <b>forward</b> qiling yoki matn/rasmlarni yuboring 🌸"
+                )
+                return
 
-    # If price was not detected: prompt for price
-    if not retail_price:
-        if state is not None:
-            await state.set_state(ProductWizard.price)
-        await message.answer(
-            "💰 <b>1-qadam: Mahsulot narxini kiriting:</b>\n\n"
-            "💡 <i>(Rasmda narx aniqlanmadi, iltimos narxni yozing)</i>\n"
-            "Misol uchun: <code>28.9 yuan</code> yoki <code>29 yuan</code> yoki so'mda: <code>70.000 so'm</code>\n\n"
-            "<i>Bot avtomatik 25%-35% foyda va kargo hisoblaydi ✨</i>",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
-                resize_keyboard=True,
-            ),
-        )
-        return
+            raw_text = embed_data["raw_text"] or raw_text
+            photos = embed_data["photos"] or photos
+            source_label = f"Havola orqali import (@{link_info['chat_ref']}/{link_info['message_id']})"
 
-    # If sizes were not detected: prompt for sizes (only for clothing/shoes)
-    if not sizes:
+        # 2. Parse product channel post with 25%-35% profit margin
+        parsed = parse_channel_post(raw_text, apply_margin=True)
+        source_price = parsed["source_price"]
+        retail_price = parsed["retail_price"]
+        margin_percent = parsed["margin_percent"]
+        sizes = parsed["sizes"]
+        colors = parsed.get("colors", [])
+        cargo_rate = parsed.get("cargo_rate", 12000)
+        cat_slug = parsed.get("category") or ""
+        title = parsed.get("title") or (f"{cat_slug.capitalize()} 🌸" if cat_slug else "Mahsulot 🌸")
+
+        spec_photo_refs: set = set()
+        ocr_spec_photo = None
+        photos_to_check = []
+
+        if photos and not status_msg:
+            try:
+                status_msg = await message.answer("🔄 <i>Rasm tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
+            except Exception:
+                pass
+
+        # Multimodal AI Vision extraction if photos are present and any core info is missing or generic
+        if photos and (not source_price or not sizes or not colors or sizes == ["Standart"] or len(colors) <= 1 or not cat_slug):
+            if len(photos) > 1:
+                photos_to_check.append(photos[-1])
+                if photos[0] not in photos_to_check:
+                    photos_to_check.append(photos[0])
+                for p in photos[1:-1]:
+                    if p not in photos_to_check:
+                        photos_to_check.append(p)
+            elif photos:
+                photos_to_check = [photos[0]]
+
+            for photo_item in photos_to_check:
+                # If price, sizes and colors are all found (and not generic Standart unless non-clothing), stop early
+                if source_price and sizes and colors and (sizes != ["Standart"] or is_non_clothing_category(cat_slug)):
+                    break
+
+                image_bytes: Optional[bytes] = None
+                photo_ref = photo_item.file_id if hasattr(photo_item, "file_id") else photo_item
+                if isinstance(photo_ref, bytes):
+                    image_bytes = photo_ref
+                elif isinstance(photo_ref, str) and (Path(photo_ref).is_file() or os.path.isfile(photo_ref)):
+                    try:
+                        image_bytes = Path(photo_ref).read_bytes()
+                    except Exception as e:
+                        logger.warning(f"Failed to read local photo {photo_ref}: {e}")
+                elif message.bot and isinstance(photo_ref, str):
+                    try:
+                        dl_res = await message.bot.download(photo_ref)
+                        if dl_res:
+                            if hasattr(dl_res, "read"):
+                                if hasattr(dl_res, "seek"):
+                                    dl_res.seek(0)
+                                image_bytes = dl_res.read()
+                            elif hasattr(dl_res, "getvalue"):
+                                image_bytes = dl_res.getvalue()
+                            elif isinstance(dl_res, bytes):
+                                image_bytes = dl_res
+                    except Exception as e:
+                        logger.warning(f"Could not download photo {photo_ref} via bot: {e}")
+
+                if not image_bytes:
+                    continue
+
+                if image_bytes and is_phone_screenshot(image_bytes):
+                    spec_photo_refs.add(photo_ref)
+
+                try:
+                    vision_res = await extract_product_from_image(image_bytes)
+                    if vision_res.get("success"):
+                        if vision_res.get("is_spec_screenshot") or vision_res.get("source_price"):
+                            spec_photo_refs.add(photo_ref)
+                            if photo_item == photos[-1] and len(photos) > 1:
+                                ocr_spec_photo = photo_ref
+
+                        # Fill missing price
+                        if not source_price and vision_res.get("source_price"):
+                            source_price = vision_res["source_price"]
+                            margin_percent = vision_res.get("margin_percent", 30.0)
+                            retail_price = vision_res.get("retail_price", calculate_retail_price(source_price, margin_percent))
+                        # Fill / improve sizes
+                        v_sizes = vision_res.get("sizes")
+                        if v_sizes:
+                            if not sizes or sizes == ["Standart"]:
+                                sizes = list(v_sizes)
+                            elif len(v_sizes) > len(sizes):
+                                sizes = list(v_sizes)
+                        # Fill / accumulate colors across album photos
+                        v_colors = vision_res.get("colors")
+                        if v_colors:
+                            if not colors:
+                                colors = list(v_colors)
+                            else:
+                                for c in v_colors:
+                                    if c not in colors:
+                                        colors.append(c)
+                        # Fill missing or generic title
+                        if (not parsed.get("title") or title in (f"{cat_slug.capitalize()} 🌸", "Mahsulot 🌸")) and vision_res.get("title"):
+                            title = vision_res["title"]
+                        # Fill category if missing from caption or generic
+                        if (not parsed.get("category") or cat_slug in ("kiyim", "jempir", "")) and vision_res.get("category"):
+                            cat_slug = vision_res["category"]
+                        # Fill cargo rate or weight
+                        if not parsed.get("cargo_rate") and vision_res.get("cargo_rate"):
+                            cargo_rate = vision_res["cargo_rate"]
+                        if not parsed.get("weight_grams") and vision_res.get("weight_grams"):
+                            parsed["weight_grams"] = vision_res["weight_grams"]
+
+                        if "AI Vision" not in source_label:
+                            source_label = f"{source_label} (AI Vision ✨)"
+                except Exception as e:
+                    logger.warning(f"AI Vision extraction encountered an issue: {e}")
+
         if is_non_clothing_category(cat_slug):
-            sizes = ["Standart"]
+            if not sizes or sizes == ["Standart"]:
+                sizes = ["Standart"]
+            if not colors:
+                colors = ["Rasmda ko'rsatilgan"]
+
+        if status_msg:
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+            status_msg = None
+
+        # Clean product photos: if there are model photos and a spec/checkout screenshot,
+        # EXCLUDE the spec screenshot from product.photos! Only keep clean clothing/model photos for the customer post.
+        if photos and len(photos) > 1:
+            for p_item in photos:
+                p_ref = p_item.file_id if hasattr(p_item, "file_id") else p_item
+                if p_ref not in spec_photo_refs:
+                    p_bytes = None
+                    if isinstance(p_ref, bytes):
+                        p_bytes = p_ref
+                    elif isinstance(p_ref, str) and (Path(p_ref).is_file() or os.path.isfile(p_ref)):
+                        try:
+                            p_bytes = Path(p_ref).read_bytes()
+                        except Exception:
+                            pass
+                    elif message.bot and isinstance(p_ref, str):
+                        try:
+                            dl = await message.bot.download(p_ref)
+                            if dl:
+                                if hasattr(dl, "read"):
+                                    if hasattr(dl, "seek"):
+                                        dl.seek(0)
+                                    p_bytes = dl.read()
+                                elif hasattr(dl, "getvalue"):
+                                    p_bytes = dl.getvalue()
+                        except Exception:
+                            pass
+                    if p_bytes and is_phone_screenshot(p_bytes):
+                        spec_photo_refs.add(p_ref)
+
+            clean_photos = [
+                p for p in photos
+                if (p.file_id if hasattr(p, "file_id") else p) not in spec_photo_refs
+            ]
+            if clean_photos and len(clean_photos) < len(photos):
+                logger.info(
+                    f"Excluded {len(photos) - len(clean_photos)} Chinese spec/checkout screenshot(s) from product photos."
+                )
+                photos = clean_photos
+            elif ocr_spec_photo and len(photos) > 1:
+                clean_candidates = [
+                    p for p in photos
+                    if (p.file_id if hasattr(p, "file_id") else p) != ocr_spec_photo
+                ]
+                if clean_candidates:
+                    photos = clean_candidates
+                    logger.info("Excluded OCR spec screenshot from product photos.")
+            elif len(photos) > 1 and source_price and photos_to_check and photos_to_check[0] == photos[-1]:
+                photos = photos[:-1]
+                logger.info("Excluded last photo (used for spec extraction) from product photos.")
+
+        # Clean description: never set description as /boost
+        clean_desc = (raw_text or "").strip()
+        if clean_desc.lower().startswith("/boost"):
+            clean_desc = re.sub(r"^/boost\b\s*", "", clean_desc, flags=re.IGNORECASE).strip()
+        clean_desc = strip_private_pricing_data(clean_desc)
+        clean_title = strip_private_pricing_data(title) or title
+        final_desc = clean_desc or clean_title
+
+        if not cat_slug:
+            cat_slug = "kiyim"
+
+        if state is not None:
+            await state.update_data(
+                photos=photos,
+                title=clean_title,
+                price=retail_price,
+                source_price=source_price,
+                margin_percent=margin_percent,
+                old_price=parsed.get("old_price"),
+                category=cat_slug,
+                sizes=sizes,
+                colors=colors,
+                weight_grams=parsed.get("weight_grams"),
+                cargo_rate=cargo_rate,
+                description=final_desc,
+                source_label=source_label,
+            )
+
+        # Require at least one product photo! Never allow text-only products without photos
+        if not photos:
             if state is not None:
-                await state.update_data(sizes=sizes)
-        else:
-            if state is not None:
-                await state.set_state(ProductWizard.sizes)
+                await state.set_state(ProductWizard.photos)
             await message.answer(
-                "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n\n"
-                "💡 <i>Tugmalardan birini tanlang yoki <b>klaviaturadan xohlagan razmeringizni yozing</b>:</i>\n"
-                "• Masalan: <code>M-2XL</code>\n"
-                "• Yoki 2 ta razmer: <code>S, M</code> yoki <code>L, XL</code>\n"
-                "• Yoki poyabzal: <code>36-40</code>\n\n"
-                "<i>Standart bo'lsa, 'Standart 🌸' tugmasini bosing ✨</i>",
+                "📸 <b>Mahsulot rasmini yuboring:</b>\n\n"
+                "Kanalga tovar chiqarish uchun rasm bo'lishi shart 🌸\n"
+                "Iltimos, mahsulot rasmini (yoki rasm albomini) yuboring:",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
+                    resize_keyboard=True,
+                ),
+            )
+            return
+
+        # Fast-track: if photos and all key info are present (from text or AI Vision), show summary directly!
+        if photos and retail_price and sizes and colors:
+            if state is not None:
+                await show_product_import_summary(message, state)
+            return
+
+        # If price was not detected: prompt for price
+        if not retail_price:
+            if state is not None:
+                await state.set_state(ProductWizard.price)
+            await message.answer(
+                "💰 <b>1-qadam: Mahsulot narxini kiriting:</b>\n\n"
+                "💡 <i>(Rasmda narx aniqlanmadi, iltimos narxni yozing)</i>\n"
+                "Misol uchun: <code>28.9 yuan</code> yoki <code>29 yuan</code> yoki so'mda: <code>70.000 so'm</code>\n\n"
+                "<i>Bot avtomatik 25%-35% foyda va kargo hisoblaydi ✨</i>",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
+                    resize_keyboard=True,
+                ),
+            )
+            return
+
+        # If sizes were not detected: prompt for sizes (only for clothing/shoes)
+        if not sizes:
+            if is_non_clothing_category(cat_slug):
+                sizes = ["Standart"]
+                if state is not None:
+                    await state.update_data(sizes=sizes)
+            else:
+                if state is not None:
+                    await state.set_state(ProductWizard.sizes)
+                await message.answer(
+                    "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n\n"
+                    "💡 <i>Tugmalardan birini tanlang yoki <b>klaviaturadan xohlagan razmeringizni yozing</b>:</i>\n"
+                    "• Masalan: <code>M-2XL</code>\n"
+                    "• Yoki 2 ta razmer: <code>S, M</code> yoki <code>L, XL</code>\n"
+                    "• Yoki poyabzal: <code>36-40</code>\n\n"
+                    "<i>Standart bo'lsa, 'Standart 🌸' tugmasini bosing ✨</i>",
+                    reply_markup=ReplyKeyboardMarkup(
+                        keyboard=[
+                            [KeyboardButton(text="Standart 🌸")],
+                            [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
+                            [KeyboardButton(text="M-2XL"), KeyboardButton(text="S, M"), KeyboardButton(text="L, XL")],
+                            [KeyboardButton(text="❌ Bekor qilish")],
+                        ],
+                        resize_keyboard=True,
+                    ),
+                )
+                return
+
+        # If colors were not detected: prompt for colors
+        if not colors:
+            if is_non_clothing_category(cat_slug):
+                colors = ["Rasmda ko'rsatilgan"]
+                if state is not None:
+                    await state.update_data(colors=colors)
+                    await show_product_import_summary(message, state)
+                return
+            if state is not None:
+                await state.set_state(ProductWizard.colors)
+            await message.answer(
+                "🎨 <b>3-qadam: Mahsulot ranglarini kiriting:</b>\n"
+                "(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
                 reply_markup=ReplyKeyboardMarkup(
                     keyboard=[
-                        [KeyboardButton(text="Standart 🌸")],
-                        [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
-                        [KeyboardButton(text="M-2XL"), KeyboardButton(text="S, M"), KeyboardButton(text="L, XL")],
+                        [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                        [KeyboardButton(text="O'tkazib yuborish ⏭️")],
+                        [KeyboardButton(text="Oq, Qora"), KeyboardButton(text="Oq, Qora, Pushti")],
                         [KeyboardButton(text="❌ Bekor qilish")],
                     ],
                     resize_keyboard=True,
@@ -894,33 +932,24 @@ async def process_product_import(
             )
             return
 
-    # If colors were not detected: prompt for colors
-    if not colors:
-        if is_non_clothing_category(cat_slug):
-            colors = ["Rasmda ko'rsatilgan"]
-            if state is not None:
-                await state.update_data(colors=colors)
-                await show_product_import_summary(message, state)
-            return
-        if state is not None:
-            await state.set_state(ProductWizard.colors)
+        # All information present -> show final summary card directly
+        await show_product_import_summary(message, state)
+    except Exception as exc:
+        logger.error(f"Unhandled error in process_product_import: {exc}", exc_info=True)
+        if status_msg:
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
         await message.answer(
-            "🎨 <b>3-qadam: Mahsulot ranglarini kiriting:</b>\n"
-            "(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
-                    [KeyboardButton(text="O'tkazib yuborish ⏭️")],
-                    [KeyboardButton(text="Oq, Qora"), KeyboardButton(text="Oq, Qora, Pushti")],
-                    [KeyboardButton(text="❌ Bekor qilish")],
-                ],
-                resize_keyboard=True,
+            "⚠️ <b>Rasm tahlilida kutilmagan xatolik yuz berdi.</b>\n"
+            "Iltimos, qaytadan yuboring yoki quyidagi tugma orqali tovar qo'shing 🌸",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(text="➕ Qo'lda tovar qo'shish", callback_data="admin_add_product")
+                ]]
             ),
         )
-        return
-
-    # All information present -> show final summary card directly
-    await show_product_import_summary(message, state)
 
 
 @router.message(is_admin_message, is_importable_message)
@@ -1016,10 +1045,27 @@ async def handle_importable_post(
             return
 
         if mg_id not in _media_group_buffer:
+            initial_photos = []
+            if message.photo:
+                initial_photos.append(message.photo[-1].file_id)
+            elif (
+                message.document
+                and getattr(message.document, "mime_type", None)
+                and str(message.document.mime_type).startswith("image/")
+            ):
+                initial_photos.append(message.document.file_id)
+
+            status_msg = None
+            try:
+                status_msg = await message.answer("🔄 <i>Rasm tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
+            except Exception:
+                pass
+
             _media_group_buffer[mg_id] = {
-                "photos": [message.photo[-1].file_id] if message.photo else [],
+                "photos": initial_photos,
                 "text": raw_cap or raw_txt or extra_text or "",
                 "message": message,
+                "status_msg": status_msg,
             }
             # Wait for all parts of the album to arrive
             await asyncio.sleep(0.6)
@@ -1045,18 +1091,32 @@ async def handle_importable_post(
                 raw_text=album_text,
                 photos=buf["photos"],
                 source_label=source_label,
+                status_msg=buf.get("status_msg"),
             )
             return
         else:
             # Subsequent album items
             if message.photo:
                 _media_group_buffer[mg_id]["photos"].append(message.photo[-1].file_id)
+            elif (
+                message.document
+                and getattr(message.document, "mime_type", None)
+                and str(message.document.mime_type).startswith("image/")
+            ):
+                _media_group_buffer[mg_id]["photos"].append(message.document.file_id)
             if message.caption and not _media_group_buffer[mg_id]["text"]:
                 _media_group_buffer[mg_id]["text"] = message.caption
             return
 
     # Single message (photo, text, or forward)
     photos = [message.photo[-1].file_id] if message.photo else []
+    if (
+        not photos
+        and message.document
+        and getattr(message.document, "mime_type", None)
+        and str(message.document.mime_type).startswith("image/")
+    ):
+        photos = [message.document.file_id]
     raw_caption = message.caption if isinstance(message.caption, str) else ""
     raw_msg_text = message.text if isinstance(message.text, str) else ""
     raw_text = (raw_caption or raw_msg_text or "").strip()
@@ -1109,12 +1169,27 @@ async def start_add_product_wizard(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(ProductWizard.photos, F.photo)
+@router.message(ProductWizard.photos, F.photo | (F.document & F.document.mime_type.startswith("image/")))
 async def process_wizard_photo(message: Message, state: FSMContext):
     data = await state.get_data()
-    photos = data.get("photos", [])
-    photos.append(message.photo[-1].file_id)
+    photos = list(data.get("photos", []))
+    file_id = message.photo[-1].file_id if message.photo else message.document.file_id
+    photos.append(file_id)
     await state.update_data(photos=photos)
+
+    # If this photo was uploaded to satisfy a text-first import where price is already known:
+    if data.get("price") and data.get("source_label"):
+        cat_slug = (data.get("category") or "").lower().replace("#", "").strip()
+        if is_non_clothing_category(cat_slug):
+            if not data.get("sizes"):
+                await state.update_data(sizes=["Standart"])
+            if not data.get("colors"):
+                await state.update_data(colors=["Rasmda ko'rsatilgan"])
+            await show_product_import_summary(message, state)
+            return
+        elif data.get("sizes") and data.get("colors"):
+            await show_product_import_summary(message, state)
+            return
 
     await message.answer(f"📸 Rasm qo'shildi! Jami rasmlar: {len(photos)} ta.\n\nYana rasm yuborishingiz yoki 'Keyingisi ➡️' tugmasini bosishingiz mumkin.")
 
@@ -1211,13 +1286,18 @@ async def process_wizard_price(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🎀 Aksessuar", callback_data="cat_pick_aksessuar"),
+                    InlineKeyboardButton(text="⌚ Soat", callback_data="cat_pick_soat"),
+                ],
+                [
+                    InlineKeyboardButton(text="🧸 Dekor", callback_data="cat_pick_dekor"),
+                    InlineKeyboardButton(text="🧣 Sharf / Ro'mol", callback_data="cat_pick_scarf"),
+                ],
+                [
                     InlineKeyboardButton(text="👗 Ko'ylak", callback_data="cat_pick_koylak"),
-                ],
-                [
                     InlineKeyboardButton(text="🧥 Jempir / Hudi", callback_data="cat_pick_jempir"),
-                    InlineKeyboardButton(text="👟 Poyabzal", callback_data="cat_pick_shoes"),
                 ],
                 [
+                    InlineKeyboardButton(text="👟 Poyabzal", callback_data="cat_pick_shoes"),
                     InlineKeyboardButton(text="✨ Boshqa tovar", callback_data="cat_pick_kiyim"),
                 ],
             ]
@@ -1529,7 +1609,13 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Ma'lumotlar topilmadi, qaytadan urinib ko'ring.", show_alert=True)
         return
 
-    category_slug = (data.get("category") or "jempir").lower().replace("#", "").strip()
+    category_slug = (data.get("category") or "kiyim").lower().replace("#", "").strip()
+    prod_sizes = list(data.get("sizes") or [])
+    if not prod_sizes and is_non_clothing_category(category_slug):
+        prod_sizes = ["Standart"]
+    prod_colors = [strip_private_pricing_data(c) for c in (data.get("colors") or []) if strip_private_pricing_data(c)]
+    if not prod_colors:
+        prod_colors = ["Rasmda ko'rsatilgan"]
 
     async with async_session_factory() as session:
         # 1. Ensure category exists or auto-create it
@@ -1563,8 +1649,8 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
             source_price=data.get("source_price"),
             category=category_slug,
             photos=data.get("photos", []),
-            sizes=data.get("sizes", []),
-            colors=[strip_private_pricing_data(c) for c in (data.get("colors") or []) if strip_private_pricing_data(c)],
+            sizes=prod_sizes,
+            colors=prod_colors,
             weight_grams=data.get("weight_grams"),
             in_stock=True,
             is_new=True,
@@ -2485,3 +2571,38 @@ async def handle_admin_reset_confirm(callback: CallbackQuery):
         "⛔ Ma'lumotlarni tozalash funksiyasi xavfsizlik maqsadida o'chirilgan.",
         show_alert=True,
     )
+
+
+@router.message(is_admin_message)
+async def handle_admin_fallback(message: Message, state: FSMContext):
+    """
+    Fallback handler for any unrecognized admin messages in private DM.
+    Prevents bot from ever remaining silent to administrators.
+    """
+    cur_state = await state.get_state() if state else None
+    if cur_state is not None:
+        await message.answer(
+            "🌸 <i>Joriy jarayon faol. Davom ettirish uchun so'ralgan ma'lumotni kiriting yoki /cancel bosing.</i>"
+        )
+        return
+
+    guide_text = (
+        "🌸 <b>Moonlight Admin Bot</b> ✨\n\n"
+        "Bot barcha turdagi tovarlarni (kiyim, poyabzal, sumka, kosmetika, aksessuarlar, parik, sharf va h.k.) qabul qilishga tayyor.\n\n"
+        "📸 <b>Tovarni kanalga chiqarish uchun:</b>\n"
+        "1. Mahsulot rasmini (yoki albomini) to'g'ridan-to'g'ri yuboring.\n"
+        "2. Tagiga narxini yozishingiz mumkin (masalan: <code>35 yuan</code> yoki <code>95.000 so'm</code>).\n"
+        "3. Xitoy ilovalari (Pinduoduo/1688/Taobao) skrinshotini yuborsangiz, AI Vision narx va ma'lumotlarni o'zi aniqlaydi!\n\n"
+        "💡 <i>Sumka, kosmetika va aksessuarlarda razmer so'ralmaydi, to'g'ridan-to'g'ri kanalga tayyorlab beriladi.</i>\n\n"
+        "⚙️ <b>Buyruqlar:</b>\n"
+        "• /admin — Asosiy admin paneli\n"
+        "• /boost — AI Vision holati\n"
+        "• /cancel — Joriy amalni bekor qilish"
+    )
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Yangi tovar qo'shish", callback_data="admin_add_product")],
+            [InlineKeyboardButton(text="👑 Admin panel", callback_data="admin_menu")],
+        ]
+    )
+    await message.answer(upgrade_to_premium_emojis(guide_text), reply_markup=markup)

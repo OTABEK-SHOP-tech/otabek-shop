@@ -32,6 +32,24 @@ def test_non_clothing_categories_membership():
     assert is_non_clothing_category("wig") is True
     assert is_non_clothing_category("scarf") is True
 
+    # Multilingual & Uzbek Latin aliases
+    assert is_non_clothing_category("sharf") is True
+    assert is_non_clothing_category("parik") is True
+    assert is_non_clothing_category("bag") is True
+    assert is_non_clothing_category("watch") is True
+    assert is_non_clothing_category("cosmetics") is True
+    assert is_non_clothing_category("accessories") is True
+    assert is_non_clothing_category("decor") is True
+    assert is_non_clothing_category("ro'mol") is True
+    assert is_non_clothing_category("oynchoq") is True
+    assert is_non_clothing_category("сумка") is True
+    assert is_non_clothing_category("косметика") is True
+    assert is_non_clothing_category("аксессуар") is True
+    assert is_non_clothing_category("парик") is True
+    assert is_non_clothing_category("шарф") is True
+    assert is_non_clothing_category("часы") is True
+    assert is_non_clothing_category("декор") is True
+
     # Clothing / shoes must NOT be non-clothing
     assert is_non_clothing_category("hoodie") is False
     assert is_non_clothing_category("koylak") is False
@@ -302,3 +320,113 @@ async def test_admin_never_sees_silence_on_photo_arrival():
 
         # The first message sent must be the loading/status message
         msg.answer.assert_any_call("🔄 <i>Rasm tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
+
+
+@pytest.mark.asyncio
+async def test_admin_text_message_fallback_never_silent():
+    """
+    Verifies that when an admin sends an arbitrary text message like 'salom' or 'yordam',
+    the bot responds with an interactive admin guide and action buttons rather than staying silent.
+    """
+    from bot.handlers.admin import handle_admin_fallback
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=8643984824)
+    msg.text = "Salom bot"
+    msg.answer = AsyncMock()
+
+    state = AsyncMock()
+    state.get_state.return_value = None
+
+    await handle_admin_fallback(msg, state)
+
+    msg.answer.assert_called_once()
+    sent_text = msg.answer.call_args.args[0]
+    markup = msg.answer.call_args.kwargs.get("reply_markup")
+    assert "Moonlight Admin Bot" in sent_text
+    assert markup is not None
+    # Check that 'Yangi tovar qo'shish' and 'Admin panel' buttons are present
+    button_callbacks = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert "admin_add_product" in button_callbacks
+    assert "admin_menu" in button_callbacks
+
+
+@pytest.mark.asyncio
+async def test_uncompressed_image_document_detected_as_importable():
+    """
+    Verifies that when an admin uploads a screenshot or photo as a Document (file)
+    with image/jpeg or image/png mime_type, is_importable_message correctly identifies it.
+    """
+    from bot.handlers.admin import is_importable_message
+    msg = MagicMock()
+    msg.photo = None
+    msg.caption = None
+    msg.text = None
+    doc = MagicMock()
+    doc.mime_type = "image/jpeg"
+    msg.document = doc
+
+    assert is_importable_message(msg) is True
+
+
+def test_caption_title_strips_supplier_price_tokens():
+    """
+    Verifies that when an admin enters 'Sumka 50 yuan' or 'Ko'ylak 45 yuan',
+    parse_channel_post strips the supplier price from the title so it never leaks
+    into customer-facing channel posts.
+    """
+    from api.services.formatters import parse_channel_post
+
+    res1 = parse_channel_post("Sumka 50 yuan", apply_margin=True)
+    assert res1["category"] == "sumka"
+    assert res1["source_price"] == 90000  # 50 * 1800
+    assert "50" not in res1["title"]
+    assert "yuan" not in res1["title"].lower()
+    assert "Sumka" in res1["title"]
+
+    res2 = parse_channel_post("Vintage Ko'ylak 35 yuan", apply_margin=True)
+    assert res2["category"] == "koylak"
+    assert res2["source_price"] == 63000
+    assert "35" not in res2["title"]
+    assert "Vintage" in res2["title"]
+
+
+@pytest.mark.asyncio
+async def test_text_first_then_photo_fast_tracks_to_summary():
+    """
+    Verifies that when an admin sends text first (#sumka 45 yuan), and is prompted for photo,
+    uploading the photo in ProductWizard.photos immediately presents the preview card
+    without restarting the wizard or asking for title/price again.
+    """
+    from bot.handlers.admin import process_wizard_photo
+    msg = MagicMock()
+    msg.photo = [MagicMock(file_id="sumka_photo_1")]
+    msg.document = None
+    msg.from_user = MagicMock(id=8643984824)
+    msg.answer = AsyncMock()
+
+    state = AsyncMock()
+    state_data = {
+        "title": "Vintage Sumka 🌸",
+        "price": 81000,
+        "source_price": 60000,
+        "category": "sumka",
+        "source_label": "Sehrli import",
+        "photos": [],
+    }
+
+    async def mock_get_data():
+        return state_data
+
+    async def mock_update_data(**kwargs):
+        state_data.update(kwargs)
+
+    state.get_data.side_effect = mock_get_data
+    state.update_data.side_effect = mock_update_data
+
+    with patch("bot.handlers.admin.show_product_import_summary", AsyncMock()) as mock_summary:
+        await process_wizard_photo(msg, state)
+
+        mock_summary.assert_called_once()
+        assert "sumka_photo_1" in state_data["photos"]
+        assert state_data["sizes"] == ["Standart"]
+        assert state_data["colors"] == ["Rasmda ko'rsatilgan"]

@@ -134,16 +134,223 @@ def mask_customer_name(name: Optional[str]) -> str:
     return clean[0] + "*" * min(5, len(clean) - 2) + clean[-1]
 
 
+CYRILLIC_TO_LATIN_CATEGORY = {
+    # Non-clothing categories
+    # 1. Sumka (bags)
+    "sumka": "sumka",
+    "sumkalar": "sumka",
+    "sumki": "sumka",
+    "сумка": "sumka",
+    "сумки": "sumka",
+    "сумочка": "sumka",
+    "bag": "sumka",
+    "bags": "sumka",
+    "handbag": "sumka",
+    "backpack": "sumka",
+    "рюкзак": "sumka",
+    "клатч": "sumka",
+    "шоппер": "sumka",
+    "shopper": "sumka",
+    "包": "sumka",
+    "包包": "sumka",
+    # 2. Kosmetika (cosmetics / makeup / skincare / perfume)
+    "kosmetika": "kosmetika",
+    "косметика": "kosmetika",
+    "cosmetics": "kosmetika",
+    "makeup": "kosmetika",
+    "makiyaj": "kosmetika",
+    "krem": "kosmetika",
+    "крем": "kosmetika",
+    "pomada": "kosmetika",
+    "помада": "kosmetika",
+    "duxi": "kosmetika",
+    "духи": "kosmetika",
+    "parfyum": "kosmetika",
+    "парфюм": "kosmetika",
+    "atir": "kosmetika",
+    "perfume": "kosmetika",
+    "skincare": "kosmetika",
+    # 3. Aksessuar (accessories / jewelry / hairpins)
+    "aksessuar": "aksessuar",
+    "aksessuarlar": "aksessuar",
+    "aksesuar": "aksessuar",
+    "аксессуар": "aksessuar",
+    "аксессуары": "aksessuar",
+    "accessories": "aksessuar",
+    "accessory": "aksessuar",
+    "jewelry": "aksessuar",
+    "бижутерия": "aksessuar",
+    "taqinchoq": "aksessuar",
+    "taqinchoqlar": "aksessuar",
+    "qadag'ich": "aksessuar",
+    "qadagich": "aksessuar",
+    "soch": "aksessuar",
+    "kamar": "aksessuar",
+    "remen": "aksessuar",
+    "ko'zoynak": "aksessuar",
+    "ochki": "aksessuar",
+    "shapka": "aksessuar",
+    "kepka": "aksessuar",
+    # 4. Wig (parik)
+    "wig": "wig",
+    "wigs": "wig",
+    "parik": "wig",
+    "pariklar": "wig",
+    "парик": "wig",
+    "парики": "wig",
+    "шиньон": "wig",
+    "假发": "wig",
+    # 5. Scarf (sharf / ro'mol)
+    "scarf": "scarf",
+    "scarves": "scarf",
+    "sharf": "scarf",
+    "sharflar": "scarf",
+    "шарф": "scarf",
+    "шарфы": "scarf",
+    "romol": "scarf",
+    "ro'mol": "scarf",
+    "romollar": "scarf",
+    "ro'mollar": "scarf",
+    "платок": "scarf",
+    "платки": "scarf",
+    "палантин": "scarf",
+    "围巾": "scarf",
+    # 6. Soat (watches)
+    "soat": "soat",
+    "soatlar": "soat",
+    "watch": "soat",
+    "watches": "soat",
+    "часы": "soat",
+    "часики": "soat",
+    "qo'l soat": "soat",
+    "qol soat": "soat",
+    "手表": "soat",
+    # 7. Dekor (home decor / toys / lifestyle)
+    "dekor": "dekor",
+    "decor": "dekor",
+    "декор": "dekor",
+    "oynchoq": "dekor",
+    "o'yinchoq": "dekor",
+    "oyinchoqlar": "dekor",
+    "o'yinchoqlar": "dekor",
+    "toy": "dekor",
+    "toys": "dekor",
+    "игрушка": "dekor",
+    "игрушки": "dekor",
+    "suvenir": "dekor",
+    "сувенир": "dekor",
+    "brelok": "dekor",
+    "брелок": "dekor",
+    # Clothing and shoes categories (require sizes)
+    # 8. Hoodie
+    "hoodie": "hoodie",
+    "hudi": "hoodie",
+    "худи": "hoodie",
+    "толстовка": "hoodie",
+    "свитшот": "hoodie",
+    "sweatshirt": "hoodie",
+    "卫衣": "hoodie",
+    # 9. Jempir (sweater / cardigan / jumper)
+    "jempir": "jempir",
+    "sviter": "jempir",
+    "свитер": "jempir",
+    "джемпер": "jempir",
+    "кофта": "jempir",
+    "кардиган": "jempir",
+    "cardigan": "jempir",
+    "sweater": "jempir",
+    "jumper": "jempir",
+    "毛衣": "jempir",
+    # 10. Ko'ylak (dress)
+    "koylak": "koylak",
+    "ko'ylak": "koylak",
+    "dress": "koylak",
+    "платье": "koylak",
+    "сарафан": "koylak",
+    "连衣裙": "koylak",
+    # 11. Yubka (skirt)
+    "yubka": "yubka",
+    "skirt": "yubka",
+    "юбка": "yubka",
+    "半身裙": "yubka",
+    # 12. Shoes (footwear)
+    "shoes": "shoes",
+    "oyoqkiyim": "shoes",
+    "poyabzal": "shoes",
+    "krossovka": "shoes",
+    "krossovkalar": "shoes",
+    "обувь": "shoes",
+    "кроссовки": "shoes",
+    "туфли": "shoes",
+    "ботинки": "shoes",
+    "лоферы": "shoes",
+    "сапоги": "shoes",
+    "босоножки": "shoes",
+    "кеды": "shoes",
+    "sandals": "shoes",
+    "loafers": "shoes",
+    "sneakers": "shoes",
+    "boots": "shoes",
+    "鞋": "shoes",
+    "鞋子": "shoes",
+    # 13. Shim (pants / trousers / jeans)
+    "shim": "shim",
+    "брюки": "shim",
+    "штаны": "shim",
+    "джинсы": "shim",
+    "pants": "shim",
+    "jeans": "shim",
+    "trousers": "shim",
+    "jinsi": "shim",
+    "shortik": "shim",
+    "шорты": "shim",
+    "裤子": "shim",
+    # 14. Futbolka (t-shirt)
+    "futbolka": "futbolka",
+    "футболка": "futbolka",
+    "t-shirt": "futbolka",
+    "tshirt": "futbolka",
+    "майка": "futbolka",
+    "топ": "futbolka",
+    "top": "futbolka",
+    "短袖": "futbolka",
+    # 15. Kurtka (jacket)
+    "kurtka": "kurtka",
+    "куртка": "kurtka",
+    "ветровка": "kurtka",
+    "jacket": "kurtka",
+    "бомбер": "kurtka",
+    "пуховик": "kurtka",
+    "外套": "kurtka",
+    # 16. Palto (coat)
+    "palto": "palto",
+    "пальто": "palto",
+    "coat": "palto",
+    "плащ": "palto",
+    "тренч": "palto",
+    "trench": "palto",
+    "大衣": "palto",
+}
+
 NON_CLOTHING_CATEGORIES = {
     "sumka", "aksessuar", "kosmetika", "wig", "scarf", "soat", "dekor",
 }
 
 
+def normalize_category(cat: Optional[str]) -> str:
+    """Normalizes category slug from Cyrillic/Uzbek/English aliases."""
+    if not cat:
+        return ""
+    raw = str(cat).lower().replace("#", "").strip()
+    return CYRILLIC_TO_LATIN_CATEGORY.get(raw, raw)
+
+
 def is_non_clothing_category(cat: Optional[str]) -> bool:
+    """Returns True if the category does not require clothing sizes."""
     if not cat:
         return False
-    return cat.lower().replace("#", "").strip() in NON_CLOTHING_CATEGORIES
-
+    norm = normalize_category(cat)
+    return norm in NON_CLOTHING_CATEGORIES
 
 STANDARD_SIZES = ["XXS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]
 SIZE_ALIASES = {
@@ -153,44 +360,6 @@ SIZE_ALIASES = {
     "2X": "2XL",
     "3X": "3XL",
     "4X": "4XL",
-}
-
-CYRILLIC_TO_LATIN_CATEGORY = {
-    "худи": "hoodie",
-    "толстовка": "hoodie",
-    "hudi": "hoodie",
-    "парик": "wig",
-    "парики": "wig",
-    "свитер": "jempir",
-    "джемпер": "jempir",
-    "кофта": "jempir",
-    "шарф": "scarf",
-    "шарфы": "scarf",
-    "сумка": "sumka",
-    "сумки": "sumka",
-    "платье": "koylak",
-    "юбка": "yubka",
-    "обувь": "shoes",
-    "кроссовки": "shoes",
-    "туфли": "shoes",
-    "аксессуар": "aksessuar",
-    "аксессуары": "aksessuar",
-    "бижутерия": "aksessuar",
-    "косметика": "kosmetika",
-    "помада": "kosmetika",
-    "духи": "kosmetika",
-    "парфюм": "kosmetika",
-    "крем": "kosmetika",
-    "часы": "soat",
-    "декор": "dekor",
-    "игрушка": "dekor",
-    "игрушки": "dekor",
-    "штаны": "shim",
-    "брюки": "shim",
-    "джинсы": "shim",
-    "футболка": "futbolka",
-    "куртка": "kurtka",
-    "пальто": "palto",
 }
 
 STOP_WORDS_SIZE = {
@@ -549,14 +718,34 @@ def build_channel_caption(
     return "\n".join(lines)
 
 
+def strip_trailing_price_from_title(title: str) -> str:
+    """
+    Strips trailing foreign or local price tokens (e.g. '50 yuan', '¥35', '70.000 so\\'m', '50k')
+    from candidate product titles to prevent supplier prices leaking into channel post headers.
+    """
+    if not title:
+        return ""
+    # Strip standalone price patterns e.g. '30 yuan', '¥30', '50.000 so\'m'
+    if re.match(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", title.strip(), re.IGNORECASE):
+        return ""
+    # Strip trailing price expressions
+    t = re.sub(
+        r"(?:\s*[-–—:]\s*|\s+)(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    ).strip()
+    return t
+
+
 def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
     """
     Magic shortcut parser: when admin forwards a channel post or pastes text,
-    extracts hashtag category, source price, calculates 25%-35% margin retail price,
+    extracts hashtag category or category keywords, source price, calculates 25%-35% margin retail price,
     extracts sizes, cargo rate, and details.
     """
     result: Dict[str, Any] = {
-        "category": "jempir",
+        "category": "",
         "price": 0,
         "source_price": 0,
         "old_price": None,
@@ -572,16 +761,26 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
     if not text:
         return result
 
-    # 1. Extract hashtag (e.g. #scarf, #jempir, #wig, #sumka, #hoodie, #худи, #парик)
+    # 1. Extract hashtag (e.g. #scarf, #jempir, #wig, #sumka, #hoodie, #худи, #парик, #sharf)
     ignored_tags = {"отзыв", "otziv", "otzyv", "skidka", "sale", "aksiya", "yangilik", "repost"}
     all_tags = re.findall(r"#([a-zA-Z0-9_\u0400-\u04FF]+)", text)
     product_tags = [t.lower() for t in all_tags if t.lower() not in ignored_tags]
+    detected_cat = ""
     if product_tags:
-        raw_cat = product_tags[0]
-        result["category"] = CYRILLIC_TO_LATIN_CATEGORY.get(raw_cat, raw_cat)
+        detected_cat = normalize_category(product_tags[0])
     elif all_tags:
-        raw_cat = all_tags[0].lower()
-        result["category"] = CYRILLIC_TO_LATIN_CATEGORY.get(raw_cat, raw_cat)
+        detected_cat = normalize_category(all_tags[0])
+
+    # 2. If no hashtag found, scan text for category keywords
+    if not detected_cat:
+        lower_text = text.lower()
+        for kw, cat_target in sorted(CYRILLIC_TO_LATIN_CATEGORY.items(), key=lambda x: -len(x[0])):
+            pattern = r"(?:\b|_)" + re.escape(kw) + r"(?:\b|_)"
+            if re.search(pattern, lower_text):
+                detected_cat = cat_target
+                break
+
+    result["category"] = detected_cat
 
     # 2. Extract sizes (e.g. "Razmer: S-2XL", "👗 Razmer: S, M, L", "👗 S-XXL", "O'lcham: 36-40")
     match_size = re.search(
@@ -727,6 +926,7 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
             cleaned = re.sub(r"^[\s✨🌸🎀]+", "", cleaned).strip()
             cleaned = re.sub(r"[\s✨🌸🎀]+$", "", cleaned).strip()
             cleaned = strip_private_pricing_data(cleaned)
+            cleaned = strip_trailing_price_from_title(cleaned)
             if cleaned:
                 result["title"] = cleaned[0].upper() + cleaned[1:] if len(cleaned) > 1 else cleaned.upper()
                 break
@@ -737,6 +937,7 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
                     c_next = re.sub(r"^[\s✨🌸🎀]+", "", next_line).strip()
                     c_next = re.sub(r"[\s✨🌸🎀]+$", "", c_next).strip()
                     c_next = strip_private_pricing_data(c_next)
+                    c_next = strip_trailing_price_from_title(c_next)
                     if c_next and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_next, re.IGNORECASE):
                         result["title"] = c_next[0].upper() + c_next[1:] if len(c_next) > 1 else c_next.upper()
                         break
@@ -747,13 +948,18 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
                 c_line = re.sub(r"^[\s✨🌸🎀#]+", "", line).strip()
                 c_line = re.sub(r"[\s✨🌸🎀]+$", "", c_line).strip()
                 c_line = strip_private_pricing_data(c_line)
+                c_line = strip_trailing_price_from_title(c_line)
                 if c_line and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_line, re.IGNORECASE):
                     result["title"] = c_line[0].upper() + c_line[1:] if len(c_line) > 1 else c_line.upper()
                     break
 
-    if not result.get("title"):
-        cat_disp = result.get("category") or "kiyim"
-        result["title"] = f"{cat_disp.capitalize()} 🌸"
+    # If title is missing or blanked, fall back to clean category title or generic Mahsulot 🌸
+    clean_t = strip_trailing_price_from_title(result.get("title", ""))
+    if not clean_t:
+        cat_disp = result.get("category") or ""
+        result["title"] = f"{cat_disp.capitalize()} 🌸" if cat_disp else "Mahsulot 🌸"
+    else:
+        result["title"] = clean_t
 
     return result
 
