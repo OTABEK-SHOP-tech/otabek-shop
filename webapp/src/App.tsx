@@ -66,6 +66,33 @@ export const App: React.FC = () => {
 
   const t = translations[lang];
 
+  // Instant 0ms cache hydration so Mini App opens with zero blank/loading delay
+  useEffect(() => {
+    try {
+      const cachedProds = localStorage.getItem('moonlight_cached_products');
+      if (cachedProds) {
+        const parsed = JSON.parse(cachedProds);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setProducts(parsed);
+          setLoading(false);
+        }
+      }
+      const cachedCats = localStorage.getItem('moonlight_cached_categories');
+      if (cachedCats) {
+        const parsed = JSON.parse(cachedCats);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCategories(parsed);
+        }
+      }
+      const cachedSettings = localStorage.getItem('moonlight_cached_settings');
+      if (cachedSettings) {
+        setShopSettings(JSON.parse(cachedSettings));
+      }
+    } catch (e) {
+      // ignore storage access issues
+    }
+  }, []);
+
   // Initialize Telegram WebApp
   useEffect(() => {
     initTelegramApp();
@@ -129,69 +156,88 @@ export const App: React.FC = () => {
   }, [selectedProduct]);
 
   const fetchInitialData = async (rawInitData: string, initialProductParam?: string | null) => {
-    setLoading(true);
+    // If we have cached products, keep UI interactive immediately; otherwise show subtle skeleton
+    setLoading((prev) => (products.length > 0 ? false : prev));
+
     const authHeaders: Record<string, string> = rawInitData
       ? { 'X-Telegram-Init-Data': rawInitData }
       : {};
 
+    const safeFetch = async (url: string, headers?: Record<string, string>) => {
+      try {
+        const res = await fetch(url, headers ? { headers } : undefined);
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (err) {
+        console.warn(`Parallel fetch error for ${url}:`, err);
+      }
+      return null;
+    };
+
     try {
-      // 1. Fetch public settings
-      const settingsResp = await fetch('/api/settings');
-      if (settingsResp.ok) {
-        setShopSettings(await settingsResp.json());
+      // 🚀 High-speed parallel fetching: fire all independent requests at once
+      const [
+        settingsData,
+        catData,
+        prodData,
+        heroData,
+        revData,
+        cartData,
+        wishData,
+        adminData,
+      ] = await Promise.all([
+        safeFetch('/api/settings'),
+        safeFetch('/api/categories'),
+        safeFetch('/api/products'),
+        safeFetch('/api/products/hero'),
+        safeFetch('/api/reviews'),
+        rawInitData ? safeFetch('/api/cart', authHeaders) : Promise.resolve(null),
+        rawInitData ? safeFetch('/api/wishlist/ids', authHeaders) : Promise.resolve(null),
+        rawInitData ? safeFetch('/api/admin/stats', authHeaders) : Promise.resolve(null),
+      ]);
+
+      if (settingsData) {
+        setShopSettings(settingsData);
+        try { localStorage.setItem('moonlight_cached_settings', JSON.stringify(settingsData)); } catch {}
       }
 
-      // 2. Fetch categories
-      const catResp = await fetch('/api/categories');
-      if (catResp.ok) {
-        setCategories(await catResp.json());
+      if (catData && Array.isArray(catData)) {
+        setCategories(catData);
+        try { localStorage.setItem('moonlight_cached_categories', JSON.stringify(catData)); } catch {}
       }
 
-      // 3. Fetch products
-      const prodResp = await fetch('/api/products');
-      if (prodResp.ok) {
-        const prodData: Product[] = await prodResp.json();
+      if (prodData && Array.isArray(prodData)) {
         setProducts(prodData);
+        try { localStorage.setItem('moonlight_cached_products', JSON.stringify(prodData)); } catch {}
 
-        // Check if direct deep link to product was requested
         if (initialProductParam) {
           const cleanId = initialProductParam.replace('product_', '');
-          const target = prodData.find((p) => p.id === parseInt(cleanId));
+          const target = prodData.find((p: Product) => p.id === parseInt(cleanId));
           if (target) {
             setSelectedProduct(target);
           }
         }
       }
 
-      // 4. Fetch hero product
-      const heroResp = await fetch('/api/products/hero');
-      if (heroResp.ok) {
-        setHeroProduct(await heroResp.json());
+      if (heroData) {
+        setHeroProduct(heroData);
       }
 
-      // 5. Fetch reviews
-      const revResp = await fetch('/api/reviews');
-      if (revResp.ok) {
-        setReviews(await revResp.json());
+      if (revData && Array.isArray(revData)) {
+        setReviews(revData);
       }
 
-      // 6. If user authenticated, fetch cart & wishlist & admin check
-      if (rawInitData) {
-        const cartResp = await fetch('/api/cart', { headers: authHeaders });
-        if (cartResp.ok) {
-          setCart(await cartResp.json());
-        }
+      if (cartData) {
+        setCart(cartData);
+      }
 
-        const wishResp = await fetch('/api/wishlist/ids', { headers: authHeaders });
-        if (wishResp.ok) {
-          setWishlistIds(await wishResp.json());
-        }
+      if (wishData && Array.isArray(wishData)) {
+        setWishlistIds(wishData);
+      }
 
-        // Test admin access
-        const adminCheckResp = await fetch('/api/admin/stats', { headers: authHeaders });
-        if (adminCheckResp.ok) {
-          setIsAdmin(true);
-        }
+      if (adminData) {
+        setIsAdmin(true);
       }
     } catch (e) {
       console.error('Error fetching initial data:', e);

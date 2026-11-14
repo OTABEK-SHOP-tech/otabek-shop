@@ -18,7 +18,7 @@ class Settings(BaseSettings):
         description="One-time secret token for claiming shop ownership"
     )
     WEBAPP_URL: str = Field(
-        default="http://localhost:8001",
+        default="https://bek-style-shop.onrender.com",
         description="Base URL where the Mini App is served"
     )
     BOT_POLLING_ENABLED: bool = Field(

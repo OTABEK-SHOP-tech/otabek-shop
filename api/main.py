@@ -28,6 +28,7 @@ from bot.loader import bot, dp
 from bot.runtime import BotRuntime
 from bot.services.contest_scheduler import run_contest_scheduler
 from bot.services.cart_recovery import run_cart_recovery_scheduler
+from api.services.cloud_sync import run_render_keepalive_worker
 from db.generate_images import generate_demo_images
 from db.seed import seed_database
 from db.session import init_db, engine
@@ -42,6 +43,7 @@ logger = logging.getLogger("moonlight_shop")
 bot_polling_task = None
 contest_scheduler_task = None
 cart_recovery_task = None
+keepalive_task = None
 bot_runtime = BotRuntime(bot, dp, mode="polling" if settings.BOT_POLLING_ENABLED else "disabled")
 
 
@@ -65,8 +67,9 @@ async def lifespan(app: FastAPI):
             "first-owner claim is disabled. Set a long random value in the environment."
         )
 
-    # 2. Start Bot Polling and Contest Scheduler if configured
-    global bot_polling_task, contest_scheduler_task, cart_recovery_task
+    # 2. Start Bot Polling, Contest Scheduler and Cloud KeepAlive
+    global bot_polling_task, contest_scheduler_task, cart_recovery_task, keepalive_task
+    keepalive_task = asyncio.create_task(run_render_keepalive_worker())
     if bot and dp and settings.BOT_POLLING_ENABLED:
         if not dp.sub_routers:
             setup_routers(dp)
@@ -91,6 +94,12 @@ async def lifespan(app: FastAPI):
             contest_scheduler_task.cancel()
             try:
                 await contest_scheduler_task
+            except asyncio.CancelledError:
+                pass
+        if keepalive_task:
+            keepalive_task.cancel()
+            try:
+                await keepalive_task
             except asyncio.CancelledError:
                 pass
         await bot_runtime.stop()

@@ -48,6 +48,7 @@ from api.services.telegram_fetcher import (
 from api.services.vision_ocr import extract_product_from_image, is_phone_screenshot
 from bot.keyboards.reply import get_admin_main_keyboard, get_main_reply_keyboard
 from bot.services.channel_post import post_product_to_channel
+from api.services.cloud_sync import sync_product_to_cloud
 from bot.services.ownership import claim_ownership, create_owner_invite
 from bot.services.premium_emojis import (
     upgrade_to_premium_emojis,
@@ -1659,6 +1660,9 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
         await session.commit()
         await session.refresh(prod)
         prod_id = prod.id
+
+    # Sync immediately to Cloud Mini App in the background
+    asyncio.create_task(sync_product_to_cloud(prod))
 
     await state.clear()
     await callback.answer("Saqlandi!")

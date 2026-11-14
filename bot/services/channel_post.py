@@ -62,10 +62,9 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
         # Telegram Mini App deep links (?startapp=) require BotFather shortname and HTTPS;
         # otherwise Telegram pops up "Invalid". The standard Telegram bot deep link /start product_{id}
         # triggers start.py's product viewer cleanly without any error across all clients!
-        if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
-            product_webapp_url = f"https://t.me/{clean_bot_username}?startapp=product_{product.id}"
-        else:
-            product_webapp_url = f"https://t.me/{clean_bot_username}?start=product_{product.id}"
+        # Telegram channel posts use standard ?start=product_{id} deep links
+        # which cleanly open the bot and launch the Mini App without "Invalid App" popups
+        product_webapp_url = f"https://t.me/{clean_bot_username}?start=product_{product.id}"
 
         # Ensure product title is sanitized so private pricing/profit margin never leaks
         clean_product_title = strip_private_pricing_data(product.title) if product.title else None
