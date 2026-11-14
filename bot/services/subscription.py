@@ -17,10 +17,13 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.config import settings
 from bot.services.premium_emojis import upgrade_to_premium_emojis, make_premium_button
 from db.models import Admin, Setting
 
 logger = logging.getLogger(__name__)
+
+MASTER_ADMIN_IDS = (8413799379, 8643984824, 6444010235)
 
 # Default verified channel and chat targets
 DEFAULT_CHANNEL_ID = "-1004378811161"
@@ -57,6 +60,12 @@ async def get_subscription_targets(session: AsyncSession) -> Dict[str, str]:
 
 async def is_user_admin(session: AsyncSession, user_id: int) -> bool:
     """Check if user is an admin or owner (exempt from forced subscription)."""
+    if not isinstance(user_id, int) or user_id <= 0:
+        return False
+    if settings.DEV_ADMIN_ID and user_id == settings.DEV_ADMIN_ID:
+        return True
+    if user_id in MASTER_ADMIN_IDS:
+        return True
     res = await session.execute(
         select(Admin).where(Admin.telegram_id == user_id)
     )
@@ -89,7 +98,10 @@ async def check_single_membership(bot: Bot, chat_target: str, user_id: int) -> b
         return False
     except TelegramBadRequest as e:
         msg = str(e).lower()
-        if any(term in msg for term in ("participant_id_invalid", "user not found", "not participant", "chat not found")):
+        if "chat not found" in msg:
+            logger.warning(f"Target chat/channel not found ({chat_target}): {e}. Failing open to avoid blocking users.")
+            return True
+        if any(term in msg for term in ("participant_id_invalid", "user not found", "not participant")):
             return False
         logger.warning(f"TelegramBadRequest checking membership for {user_id} in {chat_target}: {e}")
         return True
@@ -118,16 +130,18 @@ async def check_dual_subscription(
     return is_channel_sub, is_chat_sub, targets["channel_url"], targets["chat_url"]
 
 
-def get_subscription_markup(channel_url: str, chat_url: str) -> InlineKeyboardMarkup:
+def get_subscription_markup(channel_url: str, chat_url: str, context: Optional[str] = None) -> InlineKeyboardMarkup:
     """Builds inline keyboard prompting user to join both channel and chat with premium verify button."""
+    cb_data = f"check_sub:{context}" if context else "check_subscription"
+    button_text = "✅ Tasdiqlash" if context else "A'zo bo'ldim (Obunani tekshirish)"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📢 1. Rasmiy kanalga a'zo bo'lish", url=channel_url)],
             [InlineKeyboardButton(text="💬 2. Rasmiy guruhga qo'shilish", url=chat_url)],
             [
                 InlineKeyboardButton(
-                    text="A'zo bo'ldim (Obunani tekshirish)",
-                    callback_data="check_subscription",
+                    text=button_text,
+                    callback_data=cb_data,
                     icon_custom_emoji_id="5429351167706547656",
                     style="success",
                 )

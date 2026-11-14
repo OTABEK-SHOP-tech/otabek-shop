@@ -90,6 +90,24 @@ async def test_check_single_membership_statuses():
     )
     assert await check_single_membership(bot, "-1001", 123) is False
 
+    # 6. TelegramBadRequest with chat not found -> FAILS OPEN (returns True)
+    bot.get_chat_member = AsyncMock(
+        side_effect=TelegramBadRequest(method=MagicMock(), message="Bad Request: chat not found")
+    )
+    assert await check_single_membership(bot, "-1001", 123) is True
+
+
+@pytest.mark.asyncio
+async def test_is_user_admin_dev_and_master(test_db_session):
+    async with test_db_session() as session:
+        # Master admin IDs should be recognised immediately
+        assert await is_user_admin(session, 8413799379) is True
+        assert await is_user_admin(session, 8643984824) is True
+        assert await is_user_admin(session, 6444010235) is True
+
+        # Non-admin user not in DB
+        assert await is_user_admin(session, 123456789) is False
+
 
 @pytest.mark.asyncio
 async def test_check_dual_subscription(test_db_session):
@@ -119,3 +137,13 @@ def test_subscription_markup():
     assert markup.inline_keyboard[0][0].url == "https://t.me/channel"
     assert markup.inline_keyboard[1][0].url == "https://t.me/chat"
     assert markup.inline_keyboard[2][0].callback_data == "check_subscription"
+
+
+def test_subscription_markup_with_context():
+    markup = get_subscription_markup("https://t.me/channel", "https://t.me/chat", context="product_99")
+    assert isinstance(markup, InlineKeyboardMarkup)
+    assert len(markup.inline_keyboard) == 3
+    assert markup.inline_keyboard[0][0].url == "https://t.me/channel"
+    assert markup.inline_keyboard[1][0].url == "https://t.me/chat"
+    assert markup.inline_keyboard[2][0].callback_data == "check_sub:product_99"
+    assert "Tasdiqlash" in markup.inline_keyboard[2][0].text

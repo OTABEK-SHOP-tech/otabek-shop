@@ -125,9 +125,16 @@ export const App: React.FC = () => {
       });
     }
 
-    // Handle deep links in URL query (e.g. ?product=1 or ?tab=admin or startapp=product_1)
+    // Handle deep links in URL query (e.g. ?product=1 or ?tab=admin or startapp=product_1) or Telegram start_param
     const urlParams = new URLSearchParams(window.location.search);
-    const prodParam = urlParams.get('product') || urlParams.get('startapp');
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const tgStartParam = tg?.initDataUnsafe?.start_param;
+    const prodParam =
+      urlParams.get('product') ||
+      urlParams.get('startapp') ||
+      urlParams.get('tgWebAppStartParam') ||
+      hashParams.get('tgWebAppStartParam') ||
+      tgStartParam;
     const tabParam = urlParams.get('tab') as TabType;
 
     if (tabParam) {
@@ -212,10 +219,39 @@ export const App: React.FC = () => {
         try { localStorage.setItem('moonlight_cached_products', JSON.stringify(prodData)); } catch {}
 
         if (initialProductParam) {
-          const cleanId = initialProductParam.replace('product_', '');
-          const target = prodData.find((p: Product) => p.id === parseInt(cleanId));
-          if (target) {
-            setSelectedProduct(target);
+          const numId = parseInt(String(initialProductParam).replace(/^product_/, ''), 10);
+          if (!isNaN(numId) && numId > 0) {
+            const target = prodData.find((p: Product) => p.id === numId);
+            if (target) {
+              setSelectedProduct(target);
+            } else {
+              try {
+                const res = await fetch(`/api/products/${numId}`);
+                if (res.ok) {
+                  const singleProd = await res.json();
+                  if (singleProd && singleProd.id) {
+                    setSelectedProduct(singleProd);
+                  }
+                }
+              } catch (err) {
+                console.error('Failed to fetch deep-linked product:', err);
+              }
+            }
+          }
+        }
+      } else if (initialProductParam) {
+        const numId = parseInt(String(initialProductParam).replace(/^product_/, ''), 10);
+        if (!isNaN(numId) && numId > 0) {
+          try {
+            const res = await fetch(`/api/products/${numId}`);
+            if (res.ok) {
+              const singleProd = await res.json();
+              if (singleProd && singleProd.id) {
+                setSelectedProduct(singleProd);
+              }
+            }
+          } catch (err) {
+            console.error('Failed to fetch deep-linked product:', err);
           }
         }
       }

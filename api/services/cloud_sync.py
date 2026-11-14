@@ -63,13 +63,49 @@ async def sync_product_to_cloud(product: Product) -> bool:
             except Exception as e:
                 logger.warning(f"Could not verify category {cat_slug} on cloud: {e}")
 
-            # 2. Check if product already exists on cloud by title
-            prods_chk = await client.get(f"{base_url}/api/products")
+            # 2. Check if this exact product already exists on cloud (not solely title)
+            prods_chk = await client.get(
+                f"{base_url}/api/products",
+                params={"limit": 1000},
+                headers=headers,
+            )
             if prods_chk.is_success:
-                titles = {p.get("title", "").strip().lower() for p in prods_chk.json()}
-                if product.title.strip().lower() in titles:
-                    logger.info(f"Product '{product.title}' already exists on cloud.")
-                    return True
+                cloud_products = prods_chk.json()
+                local_title = (product.title or "").strip().lower()
+                local_photos = set(product.photos or [])
+
+                for p in cloud_products:
+                    cloud_title = (p.get("title") or "").strip().lower()
+                    if local_title != cloud_title:
+                        continue
+
+                    cloud_photos = set(p.get("photos") or [])
+                    # 1. If both products have photos, distinguish products with identical titles by photos
+                    if local_photos and cloud_photos:
+                        if local_photos & cloud_photos:
+                            logger.info(f"Product '{product.title}' (photo matched) already exists on cloud.")
+                            return True
+                        # Different photos mean different products even if they share the same title or ID
+                        continue
+
+                    # 2. If photo comparison is not available (one or both have no photos), check ID
+                    if product.id is not None and p.get("id") == product.id:
+                        logger.info(f"Product '{product.title}' (ID {product.id}) already exists on cloud.")
+                        return True
+
+                    # 3. Compare source_price if available
+                    if (
+                        getattr(product, "source_price", None) is not None
+                        and p.get("source_price") is not None
+                        and p.get("source_price") == product.source_price
+                    ):
+                        logger.info(f"Product '{product.title}' (source_price matched) already exists on cloud.")
+                        return True
+
+                    # 4. Fallback to retail price comparison
+                    if p.get("price") == product.price:
+                        logger.info(f"Product '{product.title}' (price matched) already exists on cloud.")
+                        return True
 
             # 3. Create product on cloud
             payload = {

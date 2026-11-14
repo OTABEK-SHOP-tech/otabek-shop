@@ -287,6 +287,7 @@ import time
 
 _media_group_buffer: Dict[str, Dict[str, Any]] = {}
 _processed_media_groups: Dict[str, float] = {}
+_user_active_batch: Dict[int, str] = {}
 
 
 CHINESE_MARKET_DOMAINS = (
@@ -709,7 +710,7 @@ async def process_product_import(
                 try:
                     vision_res = await extract_product_from_image(image_bytes)
                     if vision_res.get("success"):
-                        if vision_res.get("is_spec_screenshot") or vision_res.get("source_price"):
+                        if vision_res.get("is_spec_screenshot"):
                             spec_photo_refs.add(photo_ref)
                             if photo_item == photos[-1] and len(photos) > 1:
                                 ocr_spec_photo = photo_ref
@@ -811,9 +812,6 @@ async def process_product_import(
                 if clean_candidates:
                     photos = clean_candidates
                     logger.info("Excluded OCR spec screenshot from product photos.")
-            elif len(photos) > 1 and source_price and photos_to_check and photos_to_check[0] == photos[-1]:
-                photos = photos[:-1]
-                logger.info("Excluded last photo (used for spec extraction) from product photos.")
 
         # Clean description: never set description as /boost
         clean_desc = (raw_text or "").strip()
@@ -1041,8 +1039,6 @@ async def handle_importable_post(
     if has_photo:
         photo_file_id = message.photo[-1].file_id if message.photo else message.document.file_id
         mg_id = getattr(message, "media_group_id", None)
-        # Unique batch key: Telegram album ID or per-admin photo batch key
-        batch_key = str(mg_id) if mg_id else f"user_{user_id}_photobatch"
 
         now = time.time()
         # Clean up processed older than 10s
@@ -1055,50 +1051,75 @@ async def handle_importable_post(
         raw_text_check = (raw_cap or raw_txt or extra_text or "").strip()
         is_boost_caption = bool(is_boost_call or "/boost" in raw_text_check.lower())
 
-        if batch_key in _processed_media_groups and not is_boost_caption:
+        # Only Telegram albums with real media_group_id are checked against _processed_media_groups
+        if mg_id and str(mg_id) in _processed_media_groups and not is_boost_caption:
             return
+
+        # Determine batch_key: real media_group_id for albums, dynamic tracked key for separate photos
+        if mg_id:
+            batch_key = str(mg_id)
+        else:
+            active_key = _user_active_batch.get(user_id)
+            if active_key and active_key in _media_group_buffer:
+                batch_key = active_key
+            else:
+                batch_key = f"user_{user_id}_{time.time_ns()}"
+                _user_active_batch[user_id] = batch_key
 
         if batch_key in _media_group_buffer:
             # Subsequent photo arrived in the active batch
             buf = _media_group_buffer[batch_key]
             if photo_file_id not in buf["photos"]:
                 buf["photos"].append(photo_file_id)
-            if raw_text_check and not buf["text"]:
-                buf["text"] = raw_text_check
+            if raw_text_check:
+                if not buf.get("text"):
+                    buf["text"] = raw_text_check
+                elif raw_text_check not in buf["text"]:
+                    buf["text"] = f"{buf['text']}\n{raw_text_check}".strip()
             buf["last_active"] = time.time()
             return
 
-        # First photo in this batch
-        status_msg = None
-        try:
-            status_msg = await message.answer("🔄 <i>Rasm(lar) tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
-        except Exception:
-            pass
-
+        # First photo in this batch: synchronously register buffer BEFORE any async network calls
         _media_group_buffer[batch_key] = {
             "photos": [photo_file_id],
             "text": raw_cap or raw_txt or extra_text or "",
             "message": message,
-            "status_msg": status_msg,
+            "status_msg": None,
             "last_active": time.time(),
         }
 
-        # Adaptive debounce wait: wait until no new photos arrive for 0.7s (or max 5.0s total)
-        start_wait = time.time()
-        while True:
-            await asyncio.sleep(0.3)
-            current_buf = _media_group_buffer.get(batch_key)
-            if not current_buf:
-                return
-            idle = time.time() - current_buf["last_active"]
-            total = time.time() - start_wait
-            if idle >= 0.7 or total >= 5.0:
-                break
+        # Guard buffer lifetime under try...finally from registration through debounce wait
+        try:
+            # Send progress status without racing with subsequent incoming photos
+            try:
+                status_msg = await message.answer("🔄 <i>Rasm(lar) tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
+                if batch_key in _media_group_buffer:
+                    _media_group_buffer[batch_key]["status_msg"] = status_msg
+            except Exception:
+                pass
 
-        buf = _media_group_buffer.pop(batch_key, None)
+            # Adaptive debounce wait
+            start_wait = time.time()
+            while True:
+                await asyncio.sleep(0.3)
+                current_buf = _media_group_buffer.get(batch_key)
+                if not current_buf:
+                    return
+                idle = time.time() - current_buf["last_active"]
+                total = time.time() - start_wait
+                if idle >= 0.7 or total >= 5.0:
+                    break
+        finally:
+            buf = _media_group_buffer.pop(batch_key, None)
+            if not mg_id and _user_active_batch.get(user_id) == batch_key:
+                _user_active_batch.pop(user_id, None)
+
         if not buf:
             return
-        _processed_media_groups[batch_key] = time.time()
+
+        # Record to processed media groups ONLY if it is a real Telegram media group
+        if mg_id:
+            _processed_media_groups[batch_key] = time.time()
 
         buf_text = buf["text"] if isinstance(buf.get("text"), str) else ""
         album_text = buf_text.strip()

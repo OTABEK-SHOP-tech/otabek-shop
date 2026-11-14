@@ -14,6 +14,8 @@ from api.config import settings
 from db.models import Admin, User
 from db.session import get_db
 
+MASTER_ADMIN_IDS = (8413799379, 8643984824, 6444010235)
+
 
 class TelegramUser(BaseModel):
     id: int
@@ -122,10 +124,11 @@ async def get_current_user_optional(
         res = await db.execute(select(Admin).where(Admin.telegram_id == tg_id))
         admin_rec = res.scalars().first()
 
+        is_master_admin = tg_id in MASTER_ADMIN_IDS
         is_dev_browser = settings.DEV_BROWSER_MODE and x_telegram_init_data in ("dev_browser_mode", "browser_dev_mode")
         is_dev_admin = (settings.DEV_ADMIN_ID is not None and tg_id == settings.DEV_ADMIN_ID)
-        is_admin = (admin_rec is not None) or is_dev_admin or is_dev_browser
-        is_owner = (admin_rec is not None and admin_rec.role == "owner") or is_dev_admin or is_dev_browser
+        is_admin = (admin_rec is not None) or is_dev_admin or is_dev_browser or is_master_admin
+        is_owner = (admin_rec is not None and admin_rec.role == "owner") or is_dev_admin or is_dev_browser or is_master_admin
 
         return TelegramUser(
             id=tg_id,
@@ -173,10 +176,11 @@ async def get_current_user(
     res = await db.execute(select(Admin).where(Admin.telegram_id == tg_id))
     admin_rec = res.scalars().first()
 
+    is_master_admin = tg_id in MASTER_ADMIN_IDS
     is_dev_browser = settings.DEV_BROWSER_MODE and x_telegram_init_data in ("dev_browser_mode", "browser_dev_mode")
     is_dev_admin = (settings.DEV_ADMIN_ID is not None and tg_id == settings.DEV_ADMIN_ID)
-    is_admin = (admin_rec is not None) or is_dev_admin or is_dev_browser
-    is_owner = (admin_rec is not None and admin_rec.role == "owner") or is_dev_admin or is_dev_browser
+    is_admin = (admin_rec is not None) or is_dev_admin or is_dev_browser or is_master_admin
+    is_owner = (admin_rec is not None and admin_rec.role == "owner") or is_dev_admin or is_dev_browser or is_master_admin
 
     return TelegramUser(
         id=tg_id,

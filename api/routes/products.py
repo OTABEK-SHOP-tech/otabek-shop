@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, or_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth import get_current_user_optional, TelegramUser
 from api.schemas import ProductOut
 from api.services.formatters import format_price, calculate_cargo, strip_private_pricing_data
 from db.models import Product, Setting
@@ -53,35 +54,39 @@ async def list_products(
     is_new: Optional[bool] = Query(None),
     is_hit: Optional[bool] = Query(None),
     in_stock_only: Optional[bool] = Query(False),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    user: Optional[TelegramUser] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
     cargo_rate = await get_cargo_rate(db)
+    is_admin = bool(user and user.is_admin)
     query = select(Product)
 
-    if category:
+    if category and isinstance(category, str):
         clean_cat = category.replace("#", "").strip()
         query = query.where(Product.category == clean_cat)
 
-    if search:
+    if search and isinstance(search, str):
         term = f"%{search.strip()}%"
         query = query.where(or_(Product.title.ilike(term), Product.description.ilike(term)))
 
-    if is_new is not None:
+    if isinstance(is_new, bool):
         query = query.where(Product.is_new == is_new)
 
-    if is_hit is not None:
+    if isinstance(is_hit, bool):
         query = query.where(Product.is_hit == is_hit)
 
-    if in_stock_only:
+    if in_stock_only is True:
         query = query.where(Product.in_stock == True)
 
-    query = query.order_by(desc(Product.in_stock), desc(Product.created_at)).offset(offset).limit(limit)
+    limit_val = limit if isinstance(limit, int) else 50
+    offset_val = offset if isinstance(offset, int) else 0
+    query = query.order_by(desc(Product.in_stock), desc(Product.created_at)).offset(offset_val).limit(limit_val)
     res = await db.execute(query)
     products = res.scalars().all()
 
-    return [enrich_product_out(p, cargo_rate) for p in products]
+    return [enrich_product_out(p, cargo_rate, is_admin=is_admin) for p in products]
 
 
 @router.get("/hero", response_model=Optional[ProductOut])
@@ -105,7 +110,11 @@ async def get_hero_product(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{product_id}", response_model=ProductOut)
-async def get_product_detail(product_id: int, db: AsyncSession = Depends(get_db)):
+async def get_product_detail(
+    product_id: int,
+    user: Optional[TelegramUser] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+):
     cargo_rate = await get_cargo_rate(db)
     res = await db.execute(select(Product).where(Product.id == product_id))
     product = res.scalars().first()
@@ -117,4 +126,5 @@ async def get_product_detail(product_id: int, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(product)
 
-    return enrich_product_out(product, cargo_rate)
+    is_admin = bool(user and user.is_admin)
+    return enrich_product_out(product, cargo_rate, is_admin=is_admin)

@@ -108,6 +108,89 @@ async def _check_dual_sub_or_prompt(message: Message) -> bool:
     return True
 
 
+async def send_product_deep_link(message: Message, prod_id: int) -> bool:
+    """Renders and sends a product card with interactive Mini App link and photo."""
+    try:
+        async with async_session_factory() as session:
+            res_p = await session.execute(select(Product).where(Product.id == prod_id))
+            product = res_p.scalars().first()
+            if not product:
+                return False
+
+            product.views += 1
+            await session.commit()
+
+            cargo = calculate_cargo(product.weight_grams)
+            clean_title = strip_private_pricing_data(product.title) or product.title
+            clean_desc = strip_private_pricing_data(product.description or "")
+            desc_text = f"\n\n{clean_desc}" if clean_desc else ""
+            stock_badge = "" if product.in_stock else "\n\n❌ <b>Sotildi (Hozirda mavjud emas)</b>"
+
+            contact_val = "MOONLIGHT_ADMINNN"
+            try:
+                c_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
+                c_row = c_s.scalars().first()
+                if c_row and c_row.value:
+                    contact_val = c_row.value.strip()
+            except Exception:
+                pass
+            contact_display = contact_val if (contact_val.startswith("+") or contact_val.isdigit()) else f"@{contact_val.lstrip('@')}"
+            contact_link = f"https://t.me/{contact_val}" if contact_val.startswith("+") else f"https://t.me/{contact_val.lstrip('@')}"
+
+            webapp_url = settings.WEBAPP_URL or "https://bek-style-shop.onrender.com"
+            is_https_webapp = bool(webapp_url and webapp_url.startswith("https://"))
+
+            prompt_action = (
+                "🛍️ <b>Mahsulotni sotib olish uchun pastdagi tugmani bosing va do'kon (Mini App) ochiladi:</b>\n"
+                if is_https_webapp
+                else ""
+            )
+
+            text = (
+                f"🌙 <b>{escape(str(clean_title))}</b>\n"
+                f"💰 <b>Narxi:</b> {format_price(product.price)}\n"
+                f"📦 <b>Kargo:</b> ~{format_price(cargo)}"
+                f"{desc_text}"
+                f"{stock_badge}\n\n"
+                f"{prompt_action}"
+                f"💌 Buyurtma yoki savollar uchun: {contact_display}"
+            )
+
+            buttons = []
+            if is_https_webapp:
+                buttons.append([
+                    InlineKeyboardButton(
+                        text="🛍️ Mahsulotni xarid qilish (Mini App)",
+                        web_app=WebAppInfo(url=f"{webapp_url.rstrip('/')}?product={product.id}"),
+                    )
+                ])
+            buttons.append([
+                InlineKeyboardButton(
+                    text="💌 Admin bilan bog'lanish (Buyurtma)",
+                    url=contact_link,
+                )
+            ])
+            markup = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+            # Send with photo if available
+            media_dir = Path(settings.MEDIA_CACHE_DIR)
+            if product.photos:
+                photo_id = product.photos[0]
+                local_file = media_dir / photo_id
+                photo_obj = FSInputFile(str(local_file)) if local_file.is_file() else photo_id
+                try:
+                    await message.answer_photo(photo=photo_obj, caption=text, reply_markup=markup)
+                    return True
+                except Exception:
+                    pass
+
+            await message.answer(text, reply_markup=markup)
+            return True
+    except Exception as e:
+        logger.warning(f"Error rendering product deep link {prod_id}: {e}")
+        return False
+
+
 @router.message(CommandStart())
 async def handle_start(message: Message, command: CommandObject):
     user_id = message.from_user.id
@@ -196,9 +279,10 @@ async def handle_start(message: Message, command: CommandObject):
             if not await is_user_admin(session, user_id):
                 is_ch, is_chat, ch_url, chat_url = await check_dual_subscription(message.bot, session, user_id)
                 if not (is_ch and is_chat):
+                    sub_context = payload if payload else None
                     await message.answer(
                         SUBSCRIBE_PROMPT_TEXT,
-                        reply_markup=get_subscription_markup(ch_url, chat_url),
+                        reply_markup=get_subscription_markup(ch_url, chat_url, context=sub_context),
                     )
                     return
 
@@ -276,79 +360,8 @@ async def handle_start(message: Message, command: CommandObject):
     if payload.startswith("product_"):
         try:
             prod_id = int(payload[8:])
-            async with async_session_factory() as session:
-                res_p = await session.execute(select(Product).where(Product.id == prod_id))
-                product = res_p.scalars().first()
-                if product:
-                    product.views += 1
-                    await session.commit()
-
-                    cargo = calculate_cargo(product.weight_grams)
-                    clean_title = strip_private_pricing_data(product.title) or product.title
-                    clean_desc = strip_private_pricing_data(product.description or "")
-                    desc_text = f"\n\n{clean_desc}" if clean_desc else ""
-                    stock_badge = "" if product.in_stock else "\n\n❌ <b>Sotildi (Hozirda mavjud emas)</b>"
-
-                    contact_val = "MOONLIGHT_ADMINNN"
-                    try:
-                        c_s = await session.execute(select(Setting).where(Setting.key == "contact_username"))
-                        c_row = c_s.scalars().first()
-                        if c_row and c_row.value:
-                            contact_val = c_row.value.strip()
-                    except Exception:
-                        pass
-                    contact_display = contact_val if (contact_val.startswith("+") or contact_val.isdigit()) else f"@{contact_val.lstrip('@')}"
-                    contact_link = f"https://t.me/{contact_val}" if contact_val.startswith("+") else f"https://t.me/{contact_val.lstrip('@')}"
-
-                    webapp_url = settings.WEBAPP_URL or "https://bek-style-shop.onrender.com"
-                    is_https_webapp = bool(webapp_url and webapp_url.startswith("https://"))
-
-                    prompt_action = (
-                        "🛍️ <b>Mahsulotni sotib olish uchun pastdagi tugmani bosing va do'kon (Mini App) ochiladi:</b>\n"
-                        if is_https_webapp
-                        else ""
-                    )
-
-                    text = (
-                        f"🌙 <b>{escape(str(clean_title))}</b>\n"
-                        f"💰 <b>Narxi:</b> {format_price(product.price)}\n"
-                        f"📦 <b>Kargo:</b> ~{format_price(cargo)}"
-                        f"{desc_text}"
-                        f"{stock_badge}\n\n"
-                        f"{prompt_action}"
-                        f"💌 Buyurtma yoki savollar uchun: {contact_display}"
-                    )
-
-                    buttons = []
-                    if is_https_webapp:
-                        buttons.append([
-                            InlineKeyboardButton(
-                                text="🛍️ Mahsulotni xarid qilish (Mini App)",
-                                web_app=WebAppInfo(url=f"{webapp_url.rstrip('/')}?product={product.id}"),
-                            )
-                        ])
-                    buttons.append([
-                        InlineKeyboardButton(
-                            text="💌 Admin bilan bog'lanish (Buyurtma)",
-                            url=contact_link,
-                        )
-                    ])
-                    markup = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-                    # Send with photo if available
-                    media_dir = Path(settings.MEDIA_CACHE_DIR)
-                    if product.photos:
-                        photo_id = product.photos[0]
-                        local_file = media_dir / photo_id
-                        photo_obj = FSInputFile(str(local_file)) if local_file.is_file() else photo_id
-                        try:
-                            await message.answer_photo(photo=photo_obj, caption=text, reply_markup=markup)
-                            return
-                        except Exception:
-                            pass
-
-                    await message.answer(text, reply_markup=markup)
-                    return
+            if await send_product_deep_link(message, prod_id):
+                return
         except Exception as e:
             logger.warning(f"Error handling product deep link: {e}")
 
@@ -467,10 +480,18 @@ async def handle_channel_link(message: Message):
     )
 
 
-# --- FORCED DUAL SUBSCRIPTION: "Obuna bo'ldim" callback handler ---
+# --- FORCED DUAL SUBSCRIPTION: "Obuna bo'ldim" / "Tasdiqlash" callback handler ---
 @router.callback_query(F.data == "check_subscription")
-async def handle_check_subscription(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("check_sub:"))
+@router.callback_query(F.data.startswith("check_subscription:"))
+async def handle_subscription_confirm(callback: CallbackQuery):
     user_id = callback.from_user.id
+    raw_data = callback.data or ""
+    context = None
+    if raw_data.startswith("check_sub:"):
+        context = raw_data[len("check_sub:"):]
+    elif raw_data.startswith("check_subscription:"):
+        context = raw_data[len("check_subscription:"):]
 
     async with async_session_factory() as session:
         if await is_user_admin(session, user_id):
@@ -485,6 +506,24 @@ async def handle_check_subscription(callback: CallbackQuery):
             await callback.message.delete()
         except Exception:
             pass
+
+        # If user arrived via deep link, open their target product / contest card immediately!
+        if context:
+            if context.startswith("product_"):
+                try:
+                    prod_id = int(context[8:])
+                    sent = await send_product_deep_link(callback.message, prod_id)
+                    if sent:
+                        return
+                except Exception as e:
+                    logger.warning(f"Error displaying deep-linked product after subscription: {e}")
+            elif context == "konkurs" or context.startswith("konkurs_"):
+                try:
+                    from bot.handlers.contest import show_user_contest_dashboard
+                    await show_user_contest_dashboard(callback.message, user_id)
+                    return
+                except Exception as e:
+                    logger.warning(f"Error displaying contest dashboard after subscription: {e}")
 
         await send_welcome_greeting(callback.message, user_id)
     elif not is_ch and not is_chat:
@@ -502,3 +541,7 @@ async def handle_check_subscription(callback: CallbackQuery):
             "⚠️ Siz guruhimizga hali a'zo bo'lmadingiz!\nIltimos, guruhga ham qo'shiling.",
             show_alert=True,
         )
+
+
+# Backward-compatibility alias
+handle_check_subscription = handle_subscription_confirm
