@@ -26,6 +26,12 @@ from bot.services.contest_service import (
     format_prize_lines,
     place_badge,
 )
+from bot.services.subscription import (
+    check_dual_subscription,
+    get_subscription_markup,
+    SUBSCRIBE_PROMPT_TEXT,
+    is_user_admin,
+)
 
 logger = logging.getLogger(__name__)
 router = Router(name="contest_participant")
@@ -41,7 +47,17 @@ TOP_N = 10
 @router.message(F.text.in_({CONTEST_BUTTON_TEXT, LEGACY_CONTEST_BUTTON_TEXT}))
 async def handle_konkurs_button(message: Message):
     """Handles the contest button from the reply keyboard."""
-    await show_user_contest_dashboard(message, message.from_user.id, show_prize_photo=True)
+    user_id = message.from_user.id if message.from_user else 0
+    async with async_session_factory() as session:
+        if not await is_user_admin(session, user_id):
+            is_ch, is_chat, ch_url, chat_url = await check_dual_subscription(message.bot, session, user_id)
+            if not (is_ch and is_chat):
+                await message.answer(
+                    SUBSCRIBE_PROMPT_TEXT,
+                    reply_markup=get_subscription_markup(ch_url, chat_url),
+                )
+                return
+    await show_user_contest_dashboard(message, user_id, show_prize_photo=True)
 
 
 async def build_leaderboard_view(
@@ -85,12 +101,21 @@ async def build_leaderboard_view(
 
 @router.message(F.text == RATING_BUTTON_TEXT)
 async def handle_rating_button(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
     async with async_session_factory() as session:
+        if not await is_user_admin(session, user_id):
+            is_ch, is_chat, ch_url, chat_url = await check_dual_subscription(message.bot, session, user_id)
+            if not (is_ch and is_chat):
+                await message.answer(
+                    SUBSCRIBE_PROMPT_TEXT,
+                    reply_markup=get_subscription_markup(ch_url, chat_url),
+                )
+                return
         active = await get_active_contest(session)
         if not active:
             await message.answer(NO_ACTIVE_CONTEST_TEXT)
             return
-        text, markup = await build_leaderboard_view(session, active.id, message.from_user.id)
+        text, markup = await build_leaderboard_view(session, active.id, user_id)
     await message.answer(text, reply_markup=markup)
 
 

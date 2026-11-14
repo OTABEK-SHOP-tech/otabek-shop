@@ -300,21 +300,31 @@ async def handle_start(message: Message, command: CommandObject):
                     contact_display = contact_val if (contact_val.startswith("+") or contact_val.isdigit()) else f"@{contact_val.lstrip('@')}"
                     contact_link = f"https://t.me/{contact_val}" if contact_val.startswith("+") else f"https://t.me/{contact_val.lstrip('@')}"
 
+                    webapp_url = settings.WEBAPP_URL or "https://bek-style-shop.onrender.com"
+                    is_https_webapp = bool(webapp_url and webapp_url.startswith("https://"))
+
+                    prompt_action = (
+                        "🛍️ <b>Mahsulotni sotib olish uchun pastdagi tugmani bosing va do'kon (Mini App) ochiladi:</b>\n"
+                        if is_https_webapp
+                        else ""
+                    )
+
                     text = (
                         f"🌙 <b>{escape(str(clean_title))}</b>\n"
                         f"💰 <b>Narxi:</b> {format_price(product.price)}\n"
                         f"📦 <b>Kargo:</b> ~{format_price(cargo)}"
                         f"{desc_text}"
                         f"{stock_badge}\n\n"
-                        f"💌 Buyurtma berish uchun {contact_display} ga yozing"
+                        f"{prompt_action}"
+                        f"💌 Buyurtma yoki savollar uchun: {contact_display}"
                     )
 
                     buttons = []
-                    if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
+                    if is_https_webapp:
                         buttons.append([
                             InlineKeyboardButton(
-                                text="🛍️ Do'konda ochish",
-                                web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?product={product.id}"),
+                                text="🛍️ Mahsulotni xarid qilish (Mini App)",
+                                web_app=WebAppInfo(url=f"{webapp_url.rstrip('/')}?product={product.id}"),
                             )
                         ])
                     buttons.append([

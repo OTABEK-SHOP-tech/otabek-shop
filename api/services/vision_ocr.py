@@ -613,6 +613,39 @@ def normalize_color(color_name: str) -> str:
     return f"{cap} 🌸"
 
 
+def deduplicate_colors(colors_list: List[str]) -> List[str]:
+    """
+    Cleans and deduplicates a list of colors.
+    - Strips whitespace around tokens and emojis.
+    - Deduplicates identical colors case-insensitively.
+    - Merges redundant permutation combos (e.g. 'Oq-Qora 🤍🖤' and 'Qora va Oq 🖤🤍').
+    """
+    if not colors_list:
+        return []
+    seen_sets: List[Tuple[str, ...]] = []
+    seen_exact = set()
+    cleaned: List[str] = []
+    for c in colors_list:
+        if not c or not isinstance(c, str):
+            continue
+        c_clean = re.sub(r"\s+", " ", c).strip()
+        c_clean = re.sub(r"\s+([,.:;!?])", r"\1", c_clean)
+        if not c_clean:
+            continue
+        lower_exact = c_clean.lower()
+        if lower_exact in seen_exact:
+            continue
+        words = tuple(sorted(re.findall(r"[a-zA-Z\u0400-\u04FF\u4e00-\u9fff]+", lower_exact)))
+        words = tuple(w for w in words if w not in ("va", "bilan", "yoki", "rang", "rangi"))
+        if words and len(words) > 1 and words in seen_sets:
+            continue
+        if words and len(words) > 1:
+            seen_sets.append(words)
+        seen_exact.add(lower_exact)
+        cleaned.append(c_clean)
+    return cleaned
+
+
 def normalize_colors(colors_input: Union[str, List[str], None]) -> List[str]:
     """
     Normalizes a list or string of colors into aesthetic Uzbek color names.
@@ -637,7 +670,7 @@ def normalize_colors(colors_input: Union[str, List[str], None]) -> List[str]:
         if norm and norm not in result:
             result.append(norm)
 
-    return result
+    return deduplicate_colors(result)
 
 
 def normalize_sizes(sizes_input: Union[str, List[str], None]) -> List[str]:

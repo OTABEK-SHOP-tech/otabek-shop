@@ -680,8 +680,9 @@ def build_channel_caption(
             quote_lines.append(f"🐾 <b>Razmer:</b> {sizes_display}")
 
         if colors and len(colors) > 0:
-            clean_colors = [strip_private_pricing_data(re.sub(r"\s+", " ", c)).strip() for c in colors if c and c.strip()]
-            clean_colors = [c for c in clean_colors if c]
+            from api.services.vision_ocr import deduplicate_colors
+            raw_c = [strip_private_pricing_data(c) for c in colors if c]
+            clean_colors = deduplicate_colors(raw_c)
             if clean_colors:
                 colors_display = ", ".join(clean_colors)
                 colors_display = re.sub(r"\s+,", ",", colors_display)
