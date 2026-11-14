@@ -8,6 +8,7 @@ from pathlib import Path
 
 from aiogram import Router, F
 from datetime import datetime, timezone
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -35,13 +36,16 @@ from api.services.formatters import (
     format_sizes_display,
     calculate_retail_price,
     calculate_margin_percent,
+    strip_private_pricing_data,
+    is_non_clothing_category,
+    NON_CLOTHING_CATEGORIES,
 )
 from api.services.telegram_fetcher import (
     extract_telegram_post_links,
     fetch_telegram_post_embed,
     TG_POST_LINK_RE,
 )
-from api.services.vision_ocr import extract_product_from_image
+from api.services.vision_ocr import extract_product_from_image, is_phone_screenshot
 from bot.keyboards.reply import get_admin_main_keyboard, get_main_reply_keyboard
 from bot.services.channel_post import post_product_to_channel
 from bot.services.ownership import claim_ownership, create_owner_invite
@@ -83,13 +87,18 @@ class AdminSettingsState(StatesGroup):
 
 
 async def is_user_admin(user_id: int) -> bool:
+    if not isinstance(user_id, int) or user_id <= 0:
+        return False
     if settings.DEV_ADMIN_ID and user_id == settings.DEV_ADMIN_ID:
         return True
     if user_id in (8413799379, 8643984824, 6444010235):
         return True
-    async with async_session_factory() as session:
-        res = await session.execute(select(Admin).where(Admin.telegram_id == user_id))
-        return res.scalars().first() is not None
+    try:
+        async with async_session_factory() as session:
+            res = await session.execute(select(Admin).where(Admin.telegram_id == user_id))
+            return res.scalars().first() is not None
+    except Exception:
+        return False
 
 
 async def admin_only(event: CallbackQuery) -> bool:
@@ -97,12 +106,16 @@ async def admin_only(event: CallbackQuery) -> bool:
 
 
 async def is_admin_message(message: Message) -> bool:
+    chat_type = getattr(getattr(message, "chat", None), "type", None)
+    if chat_type and str(chat_type) in ("group", "supergroup", "channel"):
+        return False
     user_id = message.from_user.id if message.from_user else 0
     return await is_user_admin(user_id)
 
 
-# All buttons in this router are admin-only (messages are checked in /admin and the forward handler;
-# wizard states are only reachable from admin buttons).
+# Admin operations MUST only be processed in private DMs with the bot.
+# NEVER process admin commands, wizards or imports in groups or channels!
+router.message.filter(F.chat.type == "private")
 router.callback_query.filter(admin_only)
 
 
@@ -186,17 +199,56 @@ async def handle_cancel_wizard(message: Message, state: FSMContext):
 
 
 # Boost command
-@router.message(Command("boost"), is_admin_message)
+@router.message(Command("boost", ignore_case=True), is_admin_message)
+@router.message(F.text.regexp(r"^/[bB][oO][oO][sS][tT]\b"), is_admin_message)
+@router.message(F.caption.regexp(r"^/[bB][oO][oO][sS][tT]\b"), is_admin_message)
 async def handle_boost_command(message: Message, state: Optional[FSMContext] = None):
     """
     /boost command: Displays the AI Multimodal Vision Boost status,
     instructions, and active exchange/margin configuration.
     If invoked with a photo attached, immediately routes to product import!
+    If invoked as a reply to a photo, routes the replied photo to product import!
+    If user had buffered photos in state, processes them immediately!
     """
-    if message.photo:
+    # 1. Direct photo attached with /boost
+    if isinstance(getattr(message, "photo", None), (list, tuple)) and len(message.photo) > 0:
         await handle_importable_post(message, state)
         return
 
+    # 2. Replied-to photo
+    reply_msg = getattr(message, "reply_to_message", None)
+    if reply_msg and isinstance(getattr(reply_msg, "photo", None), (list, tuple)) and len(reply_msg.photo) > 0:
+        try:
+            setattr(reply_msg, "_is_boost", True)
+            msg_text = message.caption if isinstance(message.caption, str) else (message.text if isinstance(message.text, str) else "")
+            if msg_text:
+                setattr(reply_msg, "_boost_text", msg_text)
+        except Exception:
+            pass
+        await handle_importable_post(reply_msg, state)
+        return
+
+    # 3. Buffered photos in state
+    if state is not None:
+        data = await state.get_data()
+        buffered_photos = data.get("photos", [])
+        if buffered_photos:
+            raw_text = message.caption if isinstance(message.caption, str) else (message.text if isinstance(message.text, str) else "")
+            if raw_text.strip().lower().startswith("/boost"):
+                raw_text = re.sub(r"^/boost\b\s*", "", raw_text, flags=re.IGNORECASE).strip()
+            await process_product_import(
+                message=message,
+                state=state,
+                raw_text=raw_text,
+                photos=buffered_photos,
+                source_label="AI Vision Boost 🚀",
+            )
+            return
+
+        # Plain text /boost without photos -> clear any stuck wizard state
+        await state.clear()
+
+    # 4. Show boost status and prompt admin to send a photo
     has_gemini = bool(getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY"))
     model_name = getattr(settings, "GEMINI_VISION_MODEL", "gemini-2.0-flash")
     yuan_rate = getattr(settings, "YUAN_TO_UZS_RATE", 1800)
@@ -222,7 +274,8 @@ async def handle_boost_command(message: Message, state: Optional[FSMContext] = N
             "⚠️ <b>AI Vision Boost API kaliti kiritilmagan</b>\n\n"
             "Multimodal AI Vision imkoniyatidan to'liq foydalanish uchun <code>.env</code> faylida "
             "<code>GEMINI_API_KEY</code> ni sozlang.\n"
-            "Hozirda matnli sehrli import va tezkor tugmalar orqali import faol 🌸"
+            "Hozirda matnli sehrli import va tezkor tugmalar orqali import faol 🌸\n\n"
+            "<i>Mahsulot qo'shish uchun uning rasmini yuboring! 💌</i>"
         )
 
     await message.answer(upgrade_to_premium_emojis(status_text))
@@ -250,16 +303,19 @@ CHINESE_MARKET_DOMAINS = (
 def is_importable_message(message: Message) -> bool:
     """Detects if message is a candidate for product import or review import."""
     text = (message.caption or message.text or "").strip()
-    if text.startswith("/"):
-        if text.lower().startswith("/boost") and message.photo:
-            return True
-        return False
 
     # 1. Any photo/screenshot sent by admin is candidate for product import
     if message.photo:
         return True
 
-    # 2. Forwarded from channel / user / chat
+    # 2. Boost command in text or caption
+    if text.lower().startswith("/boost"):
+        return True
+
+    if text.startswith("/"):
+        return False
+
+    # 3. Forwarded from channel / user / chat
     if (
         getattr(message, "forward_origin", None) is not None
         or getattr(message, "forward_from_chat", None) is not None
@@ -287,9 +343,56 @@ def is_importable_message(message: Message) -> bool:
     return False
 
 
-async def show_product_import_summary(message: Message, state: FSMContext) -> None:
-    """Builds and shows the final preview card before channel posting."""
-    data = await state.get_data()
+MARGIN_PERCENT_OPTIONS: List[int] = [
+    5, 10, 15, 20,
+    25, 30, 35, 40,
+    45, 50, 55, 60,
+    65, 70, 75, 80,
+    85, 90, 95, 100,
+]
+
+
+def build_product_import_summary_keyboard(selected_margin: int = 30) -> InlineKeyboardMarkup:
+    """
+    Builds the inline keyboard with margin percentage selector buttons
+    (5% to 100% in 5% increments arranged cleanly in 4-column grid rows)
+    and action buttons (Save / Edit / Cancel).
+    """
+    active_m = min(MARGIN_PERCENT_OPTIONS, key=lambda x: abs(x - selected_margin))
+    keyboard: List[List[InlineKeyboardButton]] = []
+
+    # 5 rows x 4 buttons = 20 buttons covering 5% to 100%
+    for i in range(0, len(MARGIN_PERCENT_OPTIONS), 4):
+        row: List[InlineKeyboardButton] = []
+        for m in MARGIN_PERCENT_OPTIONS[i : i + 4]:
+            btn_text = f"✅ {m}%" if m == active_m else f"{m}%"
+            row.append(
+                InlineKeyboardButton(
+                    text=btn_text,
+                    callback_data=f"wizard_margin_{m}",
+                )
+            )
+        keyboard.append(row)
+
+    # Action buttons
+    keyboard.append([
+        InlineKeyboardButton(
+            text="✅ To'g'ri, saqlash & kanalga joylash",
+            callback_data="wizard_save_fast",
+            icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
+            style="primary",
+        ),
+    ])
+    keyboard.append([
+        InlineKeyboardButton(text="✏️ O'zgartirish", callback_data="admin_add_product"),
+        InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel"),
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def build_product_import_summary_text(data: dict) -> str:
+    """Builds the text for the preview summary card."""
     photos = data.get("photos", [])
     cat_slug = (data.get("category") or "kiyim").lower().replace("#", "").strip()
     title = data.get("title") or f"{cat_slug.capitalize()} 🌸"
@@ -304,42 +407,119 @@ async def show_product_import_summary(message: Message, state: FSMContext) -> No
     colors_display = ", ".join(colors) if colors else "Standart"
     source_price_str = format_price(source_price) if source_price else "Aniqlanmadi"
     retail_price_str = format_price(retail_price) if retail_price else "Aniqlanmadi"
-    margin_str = f"+{int(margin_percent)}%" if margin_percent else "+30%"
+    margin_str = f"+{int(round(margin_percent))}%" if margin_percent is not None else "+30%"
+    profit_uzs = max(0, retail_price - source_price) if (source_price and retail_price) else 0
+    profit_uzs_str = format_price(profit_uzs) if profit_uzs > 0 else ""
+    profit_suffix = f" <i>(Foyda: +{profit_uzs_str})</i>" if profit_uzs_str else ""
+
+    if is_non_clothing_category(cat_slug):
+        if cat_slug in ("kosmetika", "aksessuar", "dekor", "soat") and (not sizes or sizes == ["Standart"]):
+            size_line = ""
+        else:
+            size_line = f"🌸 <b>O'lcham:</b> {escape(sizes_display)}\n"
+    else:
+        size_line = f"🐾 <b>Razmer:</b> {escape(sizes_display)}\n"
 
     summary = (
         f"✨ <b>{source_label}: Mahsulot ma'lumotlari tayyor!</b> 🌸\n\n"
+        f"<blockquote>"
         f"🏷️ <b>Kategoriya:</b> #{cat_slug}\n"
         f"🌸 <b>Nomi:</b> {escape(title)}\n"
         f"📥 <b>Asl narxi (ta'minotchi):</b> {source_price_str}\n"
-        f"💰 <b>Sotuv narxi ({margin_str} foyda):</b> <b>{retail_price_str}</b>\n"
-        f"🌸 <b>Kargo tariflari (har 100g uchun alohida):</b>\n"
-        f"  ✈️ <b>AVIA:</b> 14.000 so'm / 100g (7–9 kun)\n"
-        f"  🚗 <b>AVTO:</b> 10.000 so'm / 100g (14–18 kun)\n"
-        f"🐾 <b>O'lchamlar (Razmer):</b> {escape(sizes_display)}\n"
-        f"🎨 <b>Ranglar (Colors):</b> {escape(colors_display)}\n"
-        f"📸 <b>Rasmlar:</b> {len(photos)} ta\n\n"
-        f"<i>Saqlash tugmasini bossangiz, mahsulot do'konga qo'shiladi va avtomatik Moonlight kanaliga premium stikerlar bilan joylanadi.</i>"
+        f"💰 <b>Sotuv narxi ({margin_str}):</b> <b>{retail_price_str}</b>{profit_suffix}\n"
+        f"{size_line}"
+        f"🎨 <b>Ranglar:</b> {escape(colors_display)}\n"
+        f"🌸 <b>Kargo:</b> AVIA 14k | AVTO 10k (100g)\n"
+        f"📸 <b>Rasmlar:</b> {len(photos)} ta"
+        f"</blockquote>\n\n"
+        f"🔒 <i>(Maxfiylik: Asl narxi va foyda foizi faqat sizga ko'rinadi. Kanalda va xaridorlarga faqat sof sotuv narxi chiqadi!)</i>\n\n"
+        f"<i>Saqlash tugmasini bossangiz, mahsulot do'konga qo'shiladi va avtomatik Moonlight kanaliga joylanadi.</i>"
     )
+    return summary
 
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ To'g'ri, saqlash & kanalga joylash",
-                    callback_data="wizard_save_fast",
-                    icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
-                    style="primary",
-                ),
-            ],
-            [
-                InlineKeyboardButton(text="✏️ O'zgartirish", callback_data="admin_add_product"),
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel"),
-            ]
-        ]
-    )
+
+async def show_product_import_summary(message: Message, state: FSMContext) -> None:
+    """Builds and shows the final preview card before channel posting."""
+    data = await state.get_data() if state is not None else {}
+    summary = build_product_import_summary_text(data)
+
+    raw_margin = data.get("margin_percent")
+    try:
+        selected_margin = int(round(float(raw_margin))) if raw_margin is not None else 30
+    except (ValueError, TypeError):
+        selected_margin = 30
+
+    markup = build_product_import_summary_keyboard(selected_margin)
+
     # Remove reply keyboard if active and show inline summary
     await message.answer("✅ <i>Ma'lumotlar qabul qilindi!</i>", reply_markup=ReplyKeyboardRemove())
     await message.answer(upgrade_to_premium_emojis(summary), reply_markup=markup)
+
+
+@router.callback_query(F.data.regexp(r"^(?:wizard|import)_margin_(\d+)$"))
+async def handle_import_margin_select(callback: CallbackQuery, state: FSMContext):
+    """
+    Handles user clicking on any profit margin button (5% to 100%).
+    Recalculates retail price in real-time, updates FSM state,
+    and updates the preview card with the newly selected margin highlighted.
+    """
+    match = re.match(r"^(?:wizard|import)_margin_(\d+)$", callback.data or "")
+    if not match:
+        await callback.answer()
+        return
+
+    new_margin = int(match.group(1))
+    data = await state.get_data() if state is not None else {}
+
+    source_price = data.get("source_price") or 0
+    retail_price = data.get("price") or 0
+    old_margin = data.get("margin_percent", 30)
+
+    # If source_price is missing, try to back-calculate from current retail price
+    if (not source_price or source_price <= 0) and retail_price > 0:
+        source_price = int(round(retail_price / (1.0 + (old_margin or 30.0) / 100.0)))
+
+    # Recalculate retail price: source_price * (1 + new_margin / 100) rounded to clean 1,000 so'm
+    if source_price > 0:
+        new_retail_price = calculate_retail_price(source_price, margin_percent=float(new_margin), clamp=False)
+        if new_retail_price == 0:
+            raw_retail = source_price * (1.0 + new_margin / 100.0)
+            new_retail_price = int(round(raw_retail))
+    else:
+        new_retail_price = retail_price
+
+    if state is not None:
+        await state.update_data(
+            price=new_retail_price,
+            margin_percent=new_margin,
+            source_price=source_price,
+        )
+        updated_data = await state.get_data()
+    else:
+        updated_data = dict(data)
+        updated_data.update(price=new_retail_price, margin_percent=new_margin, source_price=source_price)
+
+    summary_text = build_product_import_summary_text(updated_data)
+    markup = build_product_import_summary_keyboard(new_margin)
+
+    try:
+        if callback.message and getattr(callback.message, "caption", None) is not None:
+            await callback.message.edit_caption(
+                caption=upgrade_to_premium_emojis(summary_text),
+                reply_markup=markup,
+            )
+        elif callback.message:
+            await callback.message.edit_text(
+                upgrade_to_premium_emojis(summary_text),
+                reply_markup=markup,
+            )
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            logger.warning(f"Failed to edit import summary on margin change: {e}")
+    except Exception as e:
+        logger.warning(f"Error editing message on margin change: {e}")
+
+    await callback.answer(f"Foyda marjasi: {new_margin}% ({format_price(new_retail_price)})")
 
 
 async def process_product_import(
@@ -445,57 +625,103 @@ async def process_product_import(
     cat_slug = parsed["category"] or "kiyim"
     title = parsed["title"] or f"{cat_slug.capitalize()} 🌸"
 
-    # Multimodal AI Vision extraction if photos are present and any core info is missing
-    if photos and (not source_price or not sizes or not colors):
-        image_bytes: Optional[bytes] = None
-        first_photo = photos[0]
+    spec_photo_refs: set = set()
+    ocr_spec_photo = None
+    photos_to_check = []
+    status_msg = None
 
-        # 1. Direct bytes
-        if isinstance(first_photo, bytes):
-            image_bytes = first_photo
-        # 2. Local cached image path
-        elif isinstance(first_photo, str) and (Path(first_photo).is_file() or os.path.isfile(first_photo)):
-            try:
-                image_bytes = Path(first_photo).read_bytes()
-            except Exception as e:
-                logger.warning(f"Failed to read local photo {first_photo}: {e}")
-        # 3. Download from Telegram via bot.download
-        elif message.bot and isinstance(first_photo, str):
-            try:
-                dl_res = await message.bot.download(first_photo)
-                if dl_res:
-                    if hasattr(dl_res, "read"):
-                        if hasattr(dl_res, "seek"):
-                            dl_res.seek(0)
-                        image_bytes = dl_res.read()
-                    elif hasattr(dl_res, "getvalue"):
-                        image_bytes = dl_res.getvalue()
-                    elif isinstance(dl_res, bytes):
-                        image_bytes = dl_res
-            except Exception as e:
-                logger.warning(f"Could not download photo {first_photo} via bot: {e}")
+    if photos:
+        try:
+            status_msg = await message.answer("🔄 <i>Rasm tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
+        except Exception:
+            pass
 
-        if image_bytes:
-            status_msg = None
-            try:
-                status_msg = await message.answer("🌸 <b>AI Vision skrinshotni tahlil qilmoqda...</b> ✨")
-            except Exception:
-                pass
+    # Multimodal AI Vision extraction if photos are present and any core info is missing or generic
+    if photos and (not source_price or not sizes or not colors or sizes == ["Standart"] or len(colors) <= 1):
+        # In multi-photo albums, inspect all album photos:
+        # last photo first (where Pinduoduo/Taobao screenshots usually are),
+        # then check the first photo (where the main model photo usually is),
+        # then any middle photos until price and sizes/colors are found.
+        if len(photos) > 1:
+            photos_to_check.append(photos[-1])
+            if photos[0] not in photos_to_check:
+                photos_to_check.append(photos[0])
+            for p in photos[1:-1]:
+                if p not in photos_to_check:
+                    photos_to_check.append(p)
+        elif photos:
+            photos_to_check = [photos[0]]
+
+        for photo_item in photos_to_check:
+            # If price, sizes and colors are all found (and not generic Standart), stop early
+            if source_price and sizes and colors and sizes != ["Standart"]:
+                break
+
+            image_bytes: Optional[bytes] = None
+            photo_ref = photo_item.file_id if hasattr(photo_item, "file_id") else photo_item
+            if isinstance(photo_ref, bytes):
+                image_bytes = photo_ref
+            elif isinstance(photo_ref, str) and (Path(photo_ref).is_file() or os.path.isfile(photo_ref)):
+                try:
+                    image_bytes = Path(photo_ref).read_bytes()
+                except Exception as e:
+                    logger.warning(f"Failed to read local photo {photo_ref}: {e}")
+            elif message.bot and isinstance(photo_ref, str):
+                try:
+                    dl_res = await message.bot.download(photo_ref)
+                    if dl_res:
+                        if hasattr(dl_res, "read"):
+                            if hasattr(dl_res, "seek"):
+                                dl_res.seek(0)
+                            image_bytes = dl_res.read()
+                        elif hasattr(dl_res, "getvalue"):
+                            image_bytes = dl_res.getvalue()
+                        elif isinstance(dl_res, bytes):
+                            image_bytes = dl_res
+                except Exception as e:
+                    logger.warning(f"Could not download photo {photo_ref} via bot: {e}")
+
+            if not image_bytes:
+                continue
+
+            if image_bytes and is_phone_screenshot(image_bytes):
+                spec_photo_refs.add(photo_ref)
+
+            if not status_msg:
+                try:
+                    status_msg = await message.answer("🌸 <b>AI Vision skrinshotni tahlil qilmoqda...</b> ✨")
+                except Exception:
+                    pass
 
             try:
                 vision_res = await extract_product_from_image(image_bytes)
                 if vision_res.get("success"):
+                    if vision_res.get("is_spec_screenshot") or vision_res.get("source_price"):
+                        spec_photo_refs.add(photo_ref)
+                        if photo_item == photos[-1] and len(photos) > 1:
+                            ocr_spec_photo = photo_ref
+
                     # Fill missing price
                     if not source_price and vision_res.get("source_price"):
                         source_price = vision_res["source_price"]
                         margin_percent = vision_res.get("margin_percent", 30.0)
                         retail_price = vision_res.get("retail_price", calculate_retail_price(source_price, margin_percent))
-                    # Fill missing sizes
-                    if not sizes and vision_res.get("sizes"):
-                        sizes = vision_res["sizes"]
-                    # Fill missing colors
-                    if not colors and vision_res.get("colors"):
-                        colors = vision_res["colors"]
+                    # Fill / improve sizes
+                    v_sizes = vision_res.get("sizes")
+                    if v_sizes:
+                        if not sizes or sizes == ["Standart"]:
+                            sizes = list(v_sizes)
+                        elif len(v_sizes) > len(sizes):
+                            sizes = list(v_sizes)
+                    # Fill / accumulate colors across album photos
+                    v_colors = vision_res.get("colors")
+                    if v_colors:
+                        if not colors:
+                            colors = list(v_colors)
+                        else:
+                            for c in v_colors:
+                                if c not in colors:
+                                    colors.append(c)
                     # Fill missing or generic title
                     if (not parsed.get("title") or title == f"{cat_slug.capitalize()} 🌸") and vision_res.get("title"):
                         title = vision_res["title"]
@@ -512,46 +738,126 @@ async def process_product_import(
                         source_label = f"{source_label} (AI Vision ✨)"
             except Exception as e:
                 logger.warning(f"AI Vision extraction encountered an issue: {e}")
-            finally:
-                if status_msg:
+
+    if is_non_clothing_category(cat_slug):
+        if not sizes or sizes == ["Standart"]:
+            sizes = ["Standart"]
+        if not colors:
+            colors = ["Rasmda ko'rsatilgan"]
+
+    if status_msg:
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+        status_msg = None
+
+    # Clean product photos: if there are model photos and a spec/checkout screenshot,
+    # EXCLUDE the spec screenshot from product.photos! Only keep clean clothing/model photos for the customer post.
+    if photos and len(photos) > 1:
+        # Check all photos in album for phone screenshots (aspect ratio >= 1.65)
+        for p_item in photos:
+            p_ref = p_item.file_id if hasattr(p_item, "file_id") else p_item
+            if p_ref not in spec_photo_refs:
+                p_bytes = None
+                if isinstance(p_ref, bytes):
+                    p_bytes = p_ref
+                elif isinstance(p_ref, str) and (Path(p_ref).is_file() or os.path.isfile(p_ref)):
                     try:
-                        await status_msg.delete()
+                        p_bytes = Path(p_ref).read_bytes()
                     except Exception:
                         pass
+                elif message.bot and isinstance(p_ref, str):
+                    try:
+                        dl = await message.bot.download(p_ref)
+                        if dl:
+                            if hasattr(dl, "read"):
+                                if hasattr(dl, "seek"):
+                                    dl.seek(0)
+                                p_bytes = dl.read()
+                            elif hasattr(dl, "getvalue"):
+                                p_bytes = dl.getvalue()
+                    except Exception:
+                        pass
+                if p_bytes and is_phone_screenshot(p_bytes):
+                    spec_photo_refs.add(p_ref)
+
+        clean_photos = [
+            p for p in photos
+            if (p.file_id if hasattr(p, "file_id") else p) not in spec_photo_refs
+        ]
+        if clean_photos and len(clean_photos) < len(photos):
+            logger.info(
+                f"Excluded {len(photos) - len(clean_photos)} Chinese spec/checkout screenshot(s) from product photos."
+            )
+            photos = clean_photos
+        elif ocr_spec_photo and len(photos) > 1:
+            clean_candidates = [
+                p for p in photos
+                if (p.file_id if hasattr(p, "file_id") else p) != ocr_spec_photo
+            ]
+            if clean_candidates:
+                photos = clean_candidates
+                logger.info("Excluded OCR spec screenshot from product photos.")
+        elif len(photos) > 1 and source_price and photos_to_check and photos_to_check[0] == photos[-1]:
+            # The last photo in the album was inspected for specs/pricing
+            photos = photos[:-1]
+            logger.info("Excluded last photo (used for spec extraction) from product photos.")
 
     # Clean description: never set description as /boost
     clean_desc = (raw_text or "").strip()
     if clean_desc.lower().startswith("/boost"):
         clean_desc = re.sub(r"^/boost\b\s*", "", clean_desc, flags=re.IGNORECASE).strip()
-    final_desc = clean_desc or title
+    clean_desc = strip_private_pricing_data(clean_desc)
+    clean_title = strip_private_pricing_data(title) or title
+    final_desc = clean_desc or clean_title
 
-    await state.update_data(
-        photos=photos,
-        title=title,
-        price=retail_price,
-        source_price=source_price,
-        margin_percent=margin_percent,
-        old_price=parsed.get("old_price"),
-        category=cat_slug,
-        sizes=sizes,
-        colors=colors,
-        weight_grams=parsed.get("weight_grams"),
-        cargo_rate=cargo_rate,
-        description=final_desc,
-        source_label=source_label,
-    )
+    if state is not None:
+        await state.update_data(
+            photos=photos,
+            title=clean_title,
+            price=retail_price,
+            source_price=source_price,
+            margin_percent=margin_percent,
+            old_price=parsed.get("old_price"),
+            category=cat_slug,
+            sizes=sizes,
+            colors=colors,
+            weight_grams=parsed.get("weight_grams"),
+            cargo_rate=cargo_rate,
+            description=final_desc,
+            source_label=source_label,
+        )
 
-    # Fast-track: if all key info is present (from text or AI Vision), show summary directly!
-    if retail_price and sizes and colors:
-        await show_product_import_summary(message, state)
+    # Require at least one product photo! Never allow text-only products without photos
+    if not photos:
+        if state is not None:
+            await state.set_state(ProductWizard.photos)
+        await message.answer(
+            "📸 <b>Mahsulot rasmini yuboring:</b>\n\n"
+            "Kanalga tovar chiqarish uchun rasm bo'lishi shart 🌸\n"
+            "Iltimos, mahsulot rasmini (yoki rasm albomini) yuboring:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
+                resize_keyboard=True,
+            ),
+        )
+        return
+
+    # Fast-track: if photos and all key info are present (from text or AI Vision), show summary directly!
+    if photos and retail_price and sizes and colors:
+        if state is not None:
+            await show_product_import_summary(message, state)
         return
 
     # If price was not detected: prompt for price
     if not retail_price:
-        await state.set_state(ProductWizard.price)
+        if state is not None:
+            await state.set_state(ProductWizard.price)
         await message.answer(
-            "💰 <b>1-qadam: Mahsulot narxini kiriting:</b>\n"
-            "(Xitoydagi narxi: <code>35 yuan</code> yoki so'mda: <code>95.000 so'm</code>)\n\n"
+            "💰 <b>1-qadam: Mahsulot narxini kiriting:</b>\n\n"
+            "💡 <i>(Rasmda narx aniqlanmadi, iltimos narxni yozing)</i>\n"
+            "Misol uchun: <code>28.9 yuan</code> yoki <code>29 yuan</code> yoki so'mda: <code>70.000 so'm</code>\n\n"
             "<i>Bot avtomatik 25%-35% foyda va kargo hisoblaydi ✨</i>",
             reply_markup=ReplyKeyboardMarkup(
                 keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
@@ -560,32 +866,51 @@ async def process_product_import(
         )
         return
 
-    # If sizes were not detected: prompt for sizes
+    # If sizes were not detected: prompt for sizes (only for clothing/shoes)
     if not sizes:
-        await state.set_state(ProductWizard.sizes)
-        await message.answer(
-            "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n"
-            "(Masalan: <code>S-2XL</code> yoki <code>S, M, L</code> yoki 'Standart' tugmasini bosing):",
-            reply_markup=ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="Standart 🌸")],
-                    [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
-                    [KeyboardButton(text="❌ Bekor qilish")],
-                ],
-                resize_keyboard=True,
-            ),
-        )
-        return
+        if is_non_clothing_category(cat_slug):
+            sizes = ["Standart"]
+            if state is not None:
+                await state.update_data(sizes=sizes)
+        else:
+            if state is not None:
+                await state.set_state(ProductWizard.sizes)
+            await message.answer(
+                "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n\n"
+                "💡 <i>Tugmalardan birini tanlang yoki <b>klaviaturadan xohlagan razmeringizni yozing</b>:</i>\n"
+                "• Masalan: <code>M-2XL</code>\n"
+                "• Yoki 2 ta razmer: <code>S, M</code> yoki <code>L, XL</code>\n"
+                "• Yoki poyabzal: <code>36-40</code>\n\n"
+                "<i>Standart bo'lsa, 'Standart 🌸' tugmasini bosing ✨</i>",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="Standart 🌸")],
+                        [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
+                        [KeyboardButton(text="M-2XL"), KeyboardButton(text="S, M"), KeyboardButton(text="L, XL")],
+                        [KeyboardButton(text="❌ Bekor qilish")],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            return
 
     # If colors were not detected: prompt for colors
     if not colors:
-        await state.set_state(ProductWizard.colors)
+        if is_non_clothing_category(cat_slug):
+            colors = ["Rasmda ko'rsatilgan"]
+            if state is not None:
+                await state.update_data(colors=colors)
+                await show_product_import_summary(message, state)
+            return
+        if state is not None:
+            await state.set_state(ProductWizard.colors)
         await message.answer(
             "🎨 <b>3-qadam: Mahsulot ranglarini kiriting:</b>\n"
             "(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
             reply_markup=ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                    [KeyboardButton(text="O'tkazib yuborish ⏭️")],
                     [KeyboardButton(text="Oq, Qora"), KeyboardButton(text="Oq, Qora, Pushti")],
                     [KeyboardButton(text="❌ Bekor qilish")],
                 ],
@@ -598,16 +923,18 @@ async def process_product_import(
     await show_product_import_summary(message, state)
 
 
-@router.message(StateFilter(None, ProductWizard.photos), is_admin_message, is_importable_message)
-async def handle_importable_post(message: Message, state: FSMContext):
+@router.message(is_admin_message, is_importable_message)
+async def handle_importable_post(
+    message: Message,
+    state: FSMContext,
+    extra_text: Optional[str] = None,
+):
     user_id = message.from_user.id if message.from_user else 0
-    if not await is_user_admin(user_id):
-        return
 
-    # Check if admin is currently in the manual photo upload wizard (ProductWizard.photos)
-    current_state = await state.get_state()
+    # Check admin FSM state
+    current_state = await state.get_state() if state else None
     if current_state == ProductWizard.photos.state:
-        text = (message.caption or message.text or "").strip()
+        text = (message.caption or message.text or extra_text or "").strip()
         is_fwd = bool(
             getattr(message, "forward_origin", None)
             or getattr(message, "forward_from_chat", None)
@@ -615,28 +942,83 @@ async def handle_importable_post(message: Message, state: FSMContext):
         )
         has_link = bool(extract_telegram_post_links(text) or any(d in text.lower() for d in CHINESE_MARKET_DOMAINS))
         has_price = bool(re.search(r"(?:yuan|юань|rmb|[¥￥元]|\b\d{4,}\s*(?:so['’`]?m|som))", text, re.IGNORECASE))
-        is_boost = bool(text.lower().startswith("/boost"))
+        is_boost = bool("/boost" in text.lower())
         # If it's a plain photo upload without import signals or media group, delegate to wizard photo collector
         if not is_fwd and not has_link and not has_price and not is_boost and not getattr(message, "media_group_id", None):
             await process_wizard_photo(message, state)
             return
+    elif current_state is not None:
+        # Admin is in another wizard state (e.g. ProductWizard.price, ProductWizard.sizes, etc.)
+        # Check if this message is an answer to the current wizard prompt (plain text, no photos/forwards/links)
+        text_check = (message.caption or message.text or extra_text or "").strip()
+        is_fwd_msg = bool(
+            getattr(message, "forward_origin", None)
+            or getattr(message, "forward_from_chat", None)
+            or getattr(message, "forward_date", None)
+        )
+        has_ext_link = bool(extract_telegram_post_links(text_check) or any(d in text_check.lower() for d in CHINESE_MARKET_DOMAINS))
+        has_media_item = bool(message.photo or getattr(message, "media_group_id", None))
+
+        # If it's a plain text answer, route directly to the active wizard step and NEVER clear state!
+        if not has_media_item and not is_fwd_msg and not has_ext_link:
+            if current_state == ProductWizard.price.state:
+                await process_wizard_price(message, state)
+                return
+            elif current_state == ProductWizard.sizes.state:
+                await process_wizard_sizes(message, state)
+                return
+            elif current_state == ProductWizard.colors.state:
+                await process_wizard_colors(message, state)
+                return
+            elif current_state == ProductWizard.title.state:
+                await process_wizard_title(message, state)
+                return
+            elif current_state == ProductWizard.category.state:
+                await process_wizard_category(message, state)
+                return
+            elif current_state == ProductWizard.weight.state:
+                await process_wizard_weight(message, state)
+                return
+            elif current_state == ProductWizard.description.state:
+                await process_wizard_description(message, state)
+                return
+
+        # Only if admin uploaded brand new photos or forwarded a new post, clear previous stuck state
+        logger.info(f"Clearing stuck state {current_state} for admin {user_id} before handling new photo/forward import")
+        if state:
+            await state.clear()
 
     # Handle Media Group (Photo Album)
+    is_boost_call = getattr(message, "_is_boost", False) is True
+    boost_extra = getattr(message, "_boost_text", None)
+    if isinstance(boost_extra, str) and boost_extra.strip():
+        if not isinstance(extra_text, str) or not extra_text.strip():
+            extra_text = boost_extra.strip()
+        elif boost_extra.strip() not in extra_text:
+            extra_text = f"{extra_text}\n{boost_extra}".strip()
+    if not isinstance(extra_text, str):
+        extra_text = ""
+
     mg_id = getattr(message, "media_group_id", None)
     if mg_id:
         now = time.time()
-        # Clean up processed older than 60s
+        # Clean up processed older than 8s
         for k in list(_processed_media_groups.keys()):
-            if now - _processed_media_groups[k] > 60:
+            if now - _processed_media_groups[k] > 8.0:
                 _processed_media_groups.pop(k, None)
 
-        if mg_id in _processed_media_groups:
+        raw_cap = message.caption if isinstance(message.caption, str) else ""
+        raw_txt = message.text if isinstance(message.text, str) else ""
+        raw_text_check = (raw_cap or raw_txt or extra_text or "").strip()
+        is_boost_caption = bool(is_boost_call or "/boost" in raw_text_check.lower())
+
+        if mg_id in _processed_media_groups and not is_boost_caption:
             return
 
         if mg_id not in _media_group_buffer:
             _media_group_buffer[mg_id] = {
                 "photos": [message.photo[-1].file_id] if message.photo else [],
-                "text": message.caption or message.text or "",
+                "text": raw_cap or raw_txt or extra_text or "",
                 "message": message,
             }
             # Wait for all parts of the album to arrive
@@ -645,11 +1027,17 @@ async def handle_importable_post(message: Message, state: FSMContext):
             if not buf:
                 return
             _processed_media_groups[mg_id] = time.time()
-            album_text = buf["text"] or ""
+            buf_text = buf["text"] if isinstance(buf.get("text"), str) else ""
+            album_text = buf_text.strip()
+            if not album_text and extra_text:
+                album_text = extra_text.strip()
+            elif extra_text and extra_text not in album_text:
+                album_text = f"{album_text}\n{extra_text}".strip()
+
             source_label = "Sehrli import (Albom)"
-            if album_text.strip().lower().startswith("/boost"):
+            if is_boost_call or "/boost" in album_text.lower():
                 source_label = "AI Vision Boost (Albom) 🚀"
-                album_text = re.sub(r"^/boost\b\s*", "", album_text, flags=re.IGNORECASE).strip()
+                album_text = re.sub(r"(?i)\b/boost\b\s*", "", album_text).strip()
 
             await process_product_import(
                 message=buf["message"],
@@ -669,16 +1057,24 @@ async def handle_importable_post(message: Message, state: FSMContext):
 
     # Single message (photo, text, or forward)
     photos = [message.photo[-1].file_id] if message.photo else []
-    raw_text = message.caption or message.text or ""
+    raw_caption = message.caption if isinstance(message.caption, str) else ""
+    raw_msg_text = message.text if isinstance(message.text, str) else ""
+    raw_text = (raw_caption or raw_msg_text or "").strip()
+    if not raw_text and extra_text:
+        raw_text = extra_text.strip()
+    elif extra_text and extra_text not in raw_text:
+        raw_text = f"{raw_text}\n{extra_text}".strip()
+
     is_fwd = bool(
         getattr(message, "forward_origin", None)
         or getattr(message, "forward_from_chat", None)
         or getattr(message, "forward_date", None)
     )
     source_label = "Kanaldan forward import" if is_fwd else "Sehrli import"
-    if raw_text.strip().lower().startswith("/boost"):
+    if is_boost_call or "/boost" in raw_text.lower():
         source_label = "AI Vision Boost 🚀"
-        raw_text = re.sub(r"^/boost\b\s*", "", raw_text, flags=re.IGNORECASE).strip()
+        raw_text = re.sub(r"(?i)\b/boost\b\s*", "", raw_text).strip()
+
     await process_product_import(
         message=message,
         state=state,
@@ -783,20 +1179,20 @@ async def process_wizard_price(message: Message, state: FSMContext):
     margin_percent = parsed["margin_percent"]
 
     if not retail_price:
-        digits = re.sub(r"\D", "", raw_text)
-        if digits and int(digits) > 0:
-            val = int(digits)
-            if "yuan" in raw_text.lower() or "¥" in raw_text or "rmb" in raw_text.lower():
-                source_price = int(round(val * 1800))
+        m_num = re.search(r"(\d+(?:[.,]\d+)?)", raw_text)
+        if m_num:
+            num_val = float(m_num.group(1).replace(",", "."))
+            if "yuan" in raw_text.lower() or "¥" in raw_text or "rmb" in raw_text.lower() or num_val < 500:
+                source_price = int(round(num_val * 1800))
                 margin_percent = calculate_margin_percent(source_price)
                 retail_price = calculate_retail_price(source_price, margin_percent)
             else:
-                retail_price = val
-                margin_percent = calculate_margin_percent(val)
-                source_price = int(round(val / (1 + margin_percent / 100)))
+                retail_price = int(round(num_val))
+                margin_percent = calculate_margin_percent(retail_price)
+                source_price = int(round(retail_price / (1 + margin_percent / 100)))
 
     if not retail_price or retail_price <= 0:
-        await message.answer("⚠️ Iltimos, to'g'ri narx kiriting (masalan: <code>35 yuan</code> yoki <code>95000</code>):")
+        await message.answer("⚠️ Iltimos, to'g'ri narx kiriting (masalan: <code>28.9 yuan</code> yoki <code>70000</code>):")
         return
 
     await state.update_data(price=retail_price, source_price=source_price, margin_percent=margin_percent)
@@ -804,14 +1200,68 @@ async def process_wizard_price(message: Message, state: FSMContext):
 
     # If in import/screenshot flow:
     if data.get("source_label"):
+        cat_slug = (data.get("category") or "").lower().replace("#", "").strip()
+        is_non_cloth = is_non_clothing_category(cat_slug)
+
+        if not cat_slug or cat_slug in ("kiyim", ""):
+            quick_cats = [
+                [
+                    InlineKeyboardButton(text="👜 Sumka", callback_data="cat_pick_sumka"),
+                    InlineKeyboardButton(text="💄 Kosmetika", callback_data="cat_pick_kosmetika"),
+                ],
+                [
+                    InlineKeyboardButton(text="🎀 Aksessuar", callback_data="cat_pick_aksessuar"),
+                    InlineKeyboardButton(text="👗 Ko'ylak", callback_data="cat_pick_koylak"),
+                ],
+                [
+                    InlineKeyboardButton(text="🧥 Jempir / Hudi", callback_data="cat_pick_jempir"),
+                    InlineKeyboardButton(text="👟 Poyabzal", callback_data="cat_pick_shoes"),
+                ],
+                [
+                    InlineKeyboardButton(text="✨ Boshqa tovar", callback_data="cat_pick_kiyim"),
+                ],
+            ]
+            await state.set_state(ProductWizard.category)
+            await message.answer(
+                "🏷️ <b>Kategoriyani tanlang:</b>",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=quick_cats),
+            )
+            return
+
+        if is_non_cloth:
+            await state.update_data(sizes=["Standart"])
+            if not data.get("colors"):
+                await state.set_state(ProductWizard.colors)
+                await message.answer(
+                    "🎨 <b>2-qadam: Mahsulot ranglarini kiriting:</b>\n"
+                    "(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
+                    reply_markup=ReplyKeyboardMarkup(
+                        keyboard=[
+                            [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                            [KeyboardButton(text="O'tkazib yuborish ⏭️")],
+                            [KeyboardButton(text="❌ Bekor qilish")],
+                        ],
+                        resize_keyboard=True,
+                    ),
+                )
+                return
+            await show_product_import_summary(message, state)
+            return
+
         if not data.get("sizes"):
             await state.set_state(ProductWizard.sizes)
             await message.answer(
-                "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n(Masalan: <code>S-2XL</code> yoki <code>S, M, L</code> yoki 'Standart' tugmasini bosing):",
+                "🐾 <b>2-qadam: Mahsulot razmerlarini kiriting:</b>\n\n"
+                "💡 <i>Tugmalardan birini tanlang yoki <b>klaviaturadan xohlagan razmeringizni yozing</b>:</i>\n"
+                "• Masalan: <code>M-2XL</code>\n"
+                "• Yoki 2 ta razmer: <code>S, M</code> yoki <code>L, XL</code>\n"
+                "• Yoki poyabzal: <code>36-40</code>\n\n"
+                "<i>Standart bo'lsa, 'Standart 🌸' tugmasini bosing ✨</i>",
                 reply_markup=ReplyKeyboardMarkup(
                     keyboard=[
                         [KeyboardButton(text="Standart 🌸")],
                         [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
+                        [KeyboardButton(text="M-2XL"), KeyboardButton(text="S, M"), KeyboardButton(text="L, XL")],
                         [KeyboardButton(text="❌ Bekor qilish")],
                     ],
                     resize_keyboard=True,
@@ -826,6 +1276,7 @@ async def process_wizard_price(message: Message, state: FSMContext):
                 reply_markup=ReplyKeyboardMarkup(
                     keyboard=[
                         [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                        [KeyboardButton(text="O'tkazib yuborish ⏭️")],
                         [KeyboardButton(text="Oq, Qora"), KeyboardButton(text="Oq, Qora, Pushti")],
                         [KeyboardButton(text="❌ Bekor qilish")],
                     ],
@@ -863,7 +1314,74 @@ async def process_wizard_price(message: Message, state: FSMContext):
 async def process_wizard_category(callback: CallbackQuery, state: FSMContext):
     slug = callback.data.replace("cat_pick_", "")
     await state.update_data(category=slug)
+    data = await state.get_data()
 
+    if is_non_clothing_category(slug):
+        # Non-clothing (sumka, kosmetika, aksessuar, etc.): default sizes to Standart and SKIP sizes!
+        await state.update_data(sizes=["Standart"])
+        if not data.get("colors"):
+            await state.set_state(ProductWizard.colors)
+            await callback.message.answer(
+                "🎨 <b>Mahsulot ranglarini kiriting:</b>\n"
+                "(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                        [KeyboardButton(text="O'tkazib yuborish ⏭️")],
+                        [KeyboardButton(text="❌ Bekor qilish")],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            await callback.answer()
+            return
+        else:
+            await show_product_import_summary(callback.message, state)
+            await callback.answer()
+            return
+
+    # If clothing / shoes and in import flow:
+    if data.get("source_label"):
+        if not data.get("sizes"):
+            await state.set_state(ProductWizard.sizes)
+            await callback.message.answer(
+                "🐾 <b>Mahsulot razmerlarini kiriting:</b>\n\n"
+                "💡 <i>Tugmalardan birini tanlang yoki klaviaturadan yozing:</i>",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="Standart 🌸")],
+                        [KeyboardButton(text="S, M, L"), KeyboardButton(text="S-2XL")],
+                        [KeyboardButton(text="M-2XL"), KeyboardButton(text="S, M"), KeyboardButton(text="L, XL")],
+                        [KeyboardButton(text="❌ Bekor qilish")],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            await callback.answer()
+            return
+
+        if not data.get("colors"):
+            await state.set_state(ProductWizard.colors)
+            await callback.message.answer(
+                "🎨 <b>Mahsulot ranglarini kiriting:</b>\n"
+                "(Masalan: <code>Oq, Qora, Pushti</code> yoki 'Rasmda ko'rsatilgan' tugmasini bosing):",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[
+                        [KeyboardButton(text="Rasmda ko'rsatilgan (Standart) 🌸")],
+                        [KeyboardButton(text="O'tkazib yuborish ⏭️")],
+                        [KeyboardButton(text="❌ Bekor qilish")],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            await callback.answer()
+            return
+
+        await show_product_import_summary(callback.message, state)
+        await callback.answer()
+        return
+
+    # Standard manual wizard flow for clothing:
     await state.set_state(ProductWizard.sizes)
     await callback.message.answer(
         "📏 <b>5/8 qadam:</b> O'lchamlarni kiriting (vergul bilan ajratib, masalan: <i>S, M, L</i>) yoki o'tkazib yuboring:",
@@ -948,7 +1466,7 @@ async def process_wizard_colors(message: Message, state: FSMContext):
     data = await state.get_data()
 
     # Check if in import/screenshot flow:
-    if data.get("source_label"):
+    if data.get("source_label") or data.get("photos"):
         await show_product_import_summary(message, state)
         return
 
@@ -997,44 +1515,11 @@ async def process_wizard_description(message: Message, state: FSMContext):
     await state.update_data(description=desc_val)
     data = await state.get_data()
 
-    # Build Preview
-    cargo = calculate_cargo(data.get("weight_grams"))
-    sizes_str = ", ".join(data.get("sizes", [])) or "Ko'rsatilmagan"
-    colors_str = ", ".join(data.get("colors", [])) or "Ko'rsatilmagan"
-
-    preview = (
-        "🌸 <b>MAHSULOT PREVIEW (Ko'rinishi):</b>\n\n"
-        f"🏷️ <b>Kategoriya:</b> #{data['category']}\n"
-        f"🎀 <b>Nomi:</b> {escape(data['title'])}\n"
-        f"💰 <b>Narxi:</b> {format_price(data['price'])}\n"
-        "📦 <b>Kargo tariflari (har 100g uchun alohida):</b>\n"
-        "  ✈️ <b>AVIA:</b> 14.000 so'm / 100g (7–9 kun)\n"
-        "  🚗 <b>AVTO:</b> 10.000 so'm / 100g (14–18 kun)\n"
-        f"📏 <b>O'lchamlar:</b> {escape(sizes_str)}\n"
-        f"🎨 <b>Ranglar:</b> {escape(colors_str)}\n"
-        f"📝 <b>Tavsif:</b> {escape(data['description'] or 'Mavjud emas')}\n"
-        f"📸 <b>Rasmlar:</b> {len(data['photos'])} ta"
-    )
-
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Saqlash & Kanalga joylash",
-                    callback_data="wizard_save",
-                    icon_custom_emoji_id=PREMIUM_BTN_BAG_ID,
-                    style="primary",
-                ),
-                InlineKeyboardButton(text="✏️ Qayta kiritish", callback_data="admin_add_product"),
-            ],
-            [
-                InlineKeyboardButton(text="❌ Bekor qilish", callback_data="admin_cancel"),
-            ]
-        ]
-    )
+    if not data.get("source_label"):
+        await state.update_data(source_label="Qo'lda kiritish")
 
     await state.set_state(ProductWizard.confirm)
-    await message.answer(upgrade_to_premium_emojis(preview), reply_markup=markup)
+    await show_product_import_summary(message, state)
 
 
 @router.callback_query(F.data.in_(["wizard_save", "wizard_save_fast"]))
@@ -1056,6 +1541,7 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
                 "sumka": "👜", "koylak": "👗", "yubka": "👗", "skirt": "👗",
                 "oyoqkiyim": "👠", "shoes": "👟", "krossovka": "👟", "aksessuar": "🎀",
                 "kosmetika": "💄", "tuxedo": "🤵", "shim": "👖", "pants": "👖",
+                "soat": "⌚", "dekor": "🧸",
             }
             emoji = slug_emojis.get(category_slug, "🌸")
             max_order_res = await session.execute(select(func.coalesce(func.max(Category.sort_order), 0)))
@@ -1070,15 +1556,15 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
 
         # 2. Save product with source_price and retail price
         prod = Product(
-            title=data["title"],
-            description=data.get("description", ""),
+            title=strip_private_pricing_data(data["title"]) or data["title"],
+            description=strip_private_pricing_data(data.get("description", "")),
             price=data["price"],
             old_price=data.get("old_price"),
             source_price=data.get("source_price"),
             category=category_slug,
             photos=data.get("photos", []),
             sizes=data.get("sizes", []),
-            colors=data.get("colors", []),
+            colors=[strip_private_pricing_data(c) for c in (data.get("colors") or []) if strip_private_pricing_data(c)],
             weight_grams=data.get("weight_grams"),
             in_stock=True,
             is_new=True,
@@ -1308,12 +1794,11 @@ async def handle_admin_stats(callback: CallbackQuery):
         "Batafsil grafiklar va monitoring Mini App 👑 Admin bo'limida mavjud!"
     )
 
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👑 Mini App'da to'liq statistika", web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=admin"))],
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_menu")]
-        ]
-    )
+    stat_buttons = []
+    if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
+        stat_buttons.append([InlineKeyboardButton(text="👑 Mini App'da to'liq statistika", web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=admin"))])
+    stat_buttons.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_menu")])
+    markup = InlineKeyboardMarkup(inline_keyboard=stat_buttons)
     await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
 
@@ -1859,17 +2344,16 @@ async def handle_admin_orders(callback: CallbackQuery):
         text_lines.append("\n💡 <i>Buyurtma holatini o'zgartirish va to'liq tafsilotlar uchun Mini App Admin paneliga kiring:</i>")
         text = "\n".join(text_lines)
 
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="👑 Mini App'da boshqarish",
-                    web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=admin"),
-                )
-            ],
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_menu")],
-        ]
-    )
+    order_buttons = []
+    if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
+        order_buttons.append([
+            InlineKeyboardButton(
+                text="👑 Mini App'da boshqarish",
+                web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=admin"),
+            )
+        ])
+    order_buttons.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="admin_menu")])
+    markup = InlineKeyboardMarkup(inline_keyboard=order_buttons)
     try:
         await callback.message.edit_text(text, reply_markup=markup)
     except Exception:

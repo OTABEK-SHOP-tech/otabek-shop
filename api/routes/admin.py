@@ -24,7 +24,7 @@ from api.schemas import (
     AdminStatsOut,
     BroadcastCreate,
 )
-from api.services.formatters import build_channel_caption, format_price
+from api.services.formatters import build_channel_caption, format_price, strip_private_pricing_data
 from bot.loader import bot
 from bot.services.broadcaster import run_broadcast
 from bot.services.channel_post import post_product_to_channel
@@ -43,9 +43,11 @@ async def admin_create_product(
     db: AsyncSession = Depends(get_db),
 ):
     cargo_rate = await get_cargo_rate(db)
+    clean_title = strip_private_pricing_data(payload.title) or payload.title
+    clean_desc = strip_private_pricing_data(payload.description or "")
     prod = Product(
-        title=payload.title,
-        description=payload.description or "",
+        title=clean_title,
+        description=clean_desc,
         price=payload.price,
         old_price=payload.old_price,
         source_price=payload.source_price,
@@ -61,7 +63,7 @@ async def admin_create_product(
     db.add(prod)
     await db.commit()
     await db.refresh(prod)
-    return enrich_product_out(prod, cargo_rate)
+    return enrich_product_out(prod, cargo_rate, is_admin=True)
 
 
 @router.put("/products/{product_id}", response_model=ProductOut)
@@ -78,12 +80,16 @@ async def admin_update_product(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mahsulot topilmadi")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "title" in update_data and update_data["title"]:
+        update_data["title"] = strip_private_pricing_data(update_data["title"]) or update_data["title"]
+    if "description" in update_data and update_data["description"]:
+        update_data["description"] = strip_private_pricing_data(update_data["description"])
     for key, value in update_data.items():
         setattr(prod, key, value)
 
     await db.commit()
     await db.refresh(prod)
-    return enrich_product_out(prod, cargo_rate)
+    return enrich_product_out(prod, cargo_rate, is_admin=True)
 
 
 @router.delete("/products/{product_id}", response_model=Dict[str, Any])

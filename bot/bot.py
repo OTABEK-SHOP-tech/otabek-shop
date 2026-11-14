@@ -27,6 +27,7 @@ async def setup_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="Do'konni ochish 🌸"),
         BotCommand(command="admin", description="Admin paneli 👑"),
+        BotCommand(command="boost", description="AI Vision orqali tovar qo'shish 🚀"),
         BotCommand(command="cancel", description="Amalni bekor qilish ❌"),
     ]
     try:

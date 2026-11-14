@@ -29,6 +29,7 @@ from bot.services.contest_service import (
 
 logger = logging.getLogger(__name__)
 router = Router(name="contest_participant")
+router.message.filter(F.chat.type == "private")
 
 NO_ACTIVE_CONTEST_TEXT = (
     "🌸 <b>Hozircha faol konkurs yo'q</b> 🎀\n\n"

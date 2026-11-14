@@ -19,7 +19,7 @@ def test_upgrade_to_premium_emojis():
     assert TG_SAKURA in upgraded
     assert TG_MONEY in upgraded
     assert TG_CARGO in upgraded
-    assert '<tg-emoji emoji-id="5429099589997184246">' in upgraded
+    assert '<tg-emoji emoji-id="5413349854728439167">' in upgraded
 
 
 def test_strip_custom_emojis():
@@ -38,3 +38,25 @@ def test_make_premium_button():
     assert btn.icon_custom_emoji_id == PREMIUM_BTN_BAG_ID
     assert btn.style == "primary"
     assert btn.url == "https://t.me/moonlight_chinese_bot"
+
+
+def test_no_nested_tg_emoji_tags():
+    # Test variation selectors and emojis that previously caused nesting
+    sample = (
+        "🎟️ Narx: 124.000 so'm\n"
+        "✔️ Отзывы: @moonlight_shop_otzv\n"
+        "🛍️ Do'konda xarid qilish\n"
+        "✈️ AVIA 🚗 AVTO 🚛 Dastavka 🌸 Sakura"
+    )
+    upgraded = upgrade_to_premium_emojis(sample)
+
+    # Check there are no nested <tg-emoji> tags
+    import re
+    nested = re.search(r'<tg-emoji[^>]*>[^<]*<tg-emoji', upgraded)
+    assert nested is None, f"Found nested <tg-emoji> tag in output: {upgraded}"
+
+    # Also test calling upgrade twice idempotently
+    double_upgraded = upgrade_to_premium_emojis(upgraded)
+    nested_double = re.search(r'<tg-emoji[^>]*>[^<]*<tg-emoji', double_upgraded)
+    assert nested_double is None, f"Found nested <tg-emoji> on double upgrade: {double_upgraded}"
+

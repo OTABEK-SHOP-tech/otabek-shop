@@ -4,22 +4,22 @@ from sqlalchemy import select, or_, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import ProductOut
-from api.services.formatters import format_price, calculate_cargo
+from api.services.formatters import format_price, calculate_cargo, strip_private_pricing_data
 from db.models import Product, Setting
 from db.session import get_db
 
 router = APIRouter(prefix="/products", tags=["products"])
 
 
-def enrich_product_out(product: Product, cargo_rate: int = 12000) -> ProductOut:
+def enrich_product_out(product: Product, cargo_rate: int = 12000, is_admin: bool = False) -> ProductOut:
     cargo = calculate_cargo(product.weight_grams, cargo_rate)
     return ProductOut(
         id=product.id,
-        title=product.title,
-        description=product.description or "",
+        title=product.title if is_admin else strip_private_pricing_data(product.title),
+        description=(product.description or "") if is_admin else strip_private_pricing_data(product.description or ""),
         price=product.price,
         old_price=product.old_price,
-        source_price=getattr(product, "source_price", None),
+        source_price=getattr(product, "source_price", None) if is_admin else None,
         category=product.category,
         photos=product.photos or [],
         sizes=product.sizes or [],
@@ -32,7 +32,7 @@ def enrich_product_out(product: Product, cargo_rate: int = 12000) -> ProductOut:
         created_at=product.created_at,
         formatted_price=format_price(product.price),
         formatted_old_price=format_price(product.old_price) if product.old_price else None,
-        formatted_source_price=format_price(product.source_price) if getattr(product, "source_price", None) else None,
+        formatted_source_price=format_price(product.source_price) if (is_admin and getattr(product, "source_price", None)) else None,
         cargo_estimate=cargo,
         formatted_cargo_estimate=format_price(cargo),
     )

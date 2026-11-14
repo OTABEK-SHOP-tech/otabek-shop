@@ -19,13 +19,13 @@ from api.services.formatters import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
-FALLBACK_GEMINI_MODEL = "gemini-3.8-flash"
+FALLBACK_GEMINI_MODEL = "gemini-2.0-flash"
 GEMINI_ENDPOINT_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
 
 # Categories that naturally do not have garment sizing (or are one-size)
-ONE_SIZE_CATEGORIES = {"sumka", "aksessuar", "kosmetika", "wig", "scarf"}
+ONE_SIZE_CATEGORIES = {"sumka", "aksessuar", "kosmetika", "wig", "scarf", "soat", "dekor"}
 
 # Comprehensive multilingual mapping for aesthetic Uzbek color names with emoji
 COLOR_MAP = {
@@ -196,6 +196,7 @@ COLOR_MAP = {
     "шоколадный": "Jigarrang 🤎",
     "шоколадная": "Jigarrang 🤎",
     "кофейный": "Jigarrang 🤎",
+    "кофе": "Jigarrang 🤎",
     "кремовый": "Krem rang 🍦",
     "кремовая": "Krem rang 🍦",
     "оранжевый": "Sabzirang 🧡",
@@ -296,6 +297,8 @@ COLOR_MAP = {
     "to'q kulrang": "To'q kulrang 🩶",
     "jigarrang": "Jigarrang 🤎",
     "jigar rang": "Jigarrang 🤎",
+    "kofe": "Jigarrang 🤎",
+    "kofe rang": "Jigarrang 🤎",
     "krem": "Krem rang 🍦",
     "krem rang": "Krem rang 🍦",
     "sabzirang": "Sabzirang 🧡",
@@ -475,6 +478,23 @@ CATEGORY_KEYWORDS = {
     "饰品": "aksessuar",
     "配饰": "aksessuar",
     "首饰": "aksessuar",
+    # Watches
+    "soat": "soat",
+    "watch": "soat",
+    "часы": "soat",
+    "手表": "soat",
+    # Home decor / toys / gifts
+    "dekor": "dekor",
+    "decor": "dekor",
+    "декор": "dekor",
+    "oyunchoq": "dekor",
+    "o'yinchoq": "dekor",
+    "toy": "dekor",
+    "plush": "dekor",
+    "игрушка": "dekor",
+    "игрушки": "dekor",
+    "摆件": "dekor",
+    "玩偶": "dekor",
     # Cosmetics
     "kosmetika": "kosmetika",
     "cosmetics": "kosmetika",
@@ -823,6 +843,10 @@ def parse_vision_response(
         except (ValueError, TypeError):
             weight_grams = None
 
+    is_spec_screenshot = bool(data.get("is_spec_screenshot", False))
+    if num_price > 0 and norm_currency == "CNY":
+        is_spec_screenshot = True
+
     return {
         "success": True,
         "title": title,
@@ -837,8 +861,32 @@ def parse_vision_response(
         "colors": colors,
         "cargo_rate": cargo_rate,
         "weight_grams": weight_grams,
+        "is_spec_screenshot": is_spec_screenshot,
         "raw_data": data,
     }
+
+
+def is_phone_screenshot(image_bytes: bytes) -> bool:
+    """
+    Detects if an image is a mobile phone screenshot based on vertical aspect ratio.
+    Smartphone screenshots typically have aspect ratio (height / width) >= 1.65
+    (e.g. 16:9 is 1.78, 19.5:9 is 2.16, 20:9 is 2.22), whereas product photography
+    is square (1:1, 1.0) or portrait (4:5 is 1.25, 3:4 is 1.33, 2:3 is 1.5).
+    """
+    if not image_bytes or len(image_bytes) < 10:
+        return False
+    try:
+        from PIL import Image
+        import io
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            w, h = img.size
+            if w > 0:
+                ratio = h / w
+                if ratio >= 1.65:
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 def _detect_image_mime(image_bytes: bytes) -> str:
@@ -856,7 +904,7 @@ async def extract_product_from_image(
     image_input: Union[bytes, str, Path, Any],
     api_key: Optional[str] = None,
     model: Optional[str] = None,
-    timeout: float = 15.0,
+    timeout: float = 30.0,
     yuan_rate: Optional[int] = None,
     usd_rate: Optional[int] = None,
     rub_rate: Optional[int] = None,
@@ -891,6 +939,7 @@ async def extract_product_from_image(
             "colors": [],
             "title": "",
             "category": "kiyim",
+            "is_spec_screenshot": False,
         }
 
     # Load image bytes
@@ -931,7 +980,7 @@ async def extract_product_from_image(
         or DEFAULT_GEMINI_MODEL
     )
     models_to_try = [primary_model]
-    for backup_m in (FALLBACK_GEMINI_MODEL, "gemini-3.5-flash"):
+    for backup_m in (FALLBACK_GEMINI_MODEL, "gemini-2.0-flash-lite"):
         if backup_m not in models_to_try:
             models_to_try.append(backup_m)
 
@@ -944,7 +993,7 @@ async def extract_product_from_image(
         "1. title: Aesthetic, clean product title in Uzbek (Latin script, e.g. 'Vintage Pushti Hoodie', "
         "'Koreyscha Elegant Ko'ylak', 'Zamonaviy Ayollar Sumkasi', 'Sport Krossovka').\n"
         "2. category: Latin slug strictly one of: 'hoodie', 'koylak', 'yubka', 'sumka', 'shoes', "
-        "'jempir', 'shim', 'futbolka', 'kurtka', 'palto', 'wig', 'scarf', 'aksessuar', 'kosmetika'.\n"
+        "'jempir', 'shim', 'futbolka', 'kurtka', 'palto', 'wig', 'scarf', 'aksessuar', 'kosmetika', 'soat', 'dekor'.\n"
         "3. raw_price: The primary active price number visible on the screenshot. "
         "If multiple prices appear (e.g. Pinduoduo 拼单价 vs 单买价 or coupon price 券后价), "
         "always choose the discounted active group-buy price (拼单价 / 券后价).\n"
@@ -952,12 +1001,14 @@ async def extract_product_from_image(
         "For Chinese marketplaces (Pinduoduo/1688/Taobao/Poizon), it is CNY.\n"
         "5. sizes: Array of available sizes (e.g. ['S', 'M', 'L', 'XL', '2XL'] or ['36', '37', '38'] "
         "or ['Standart'] if '均码', '一码', 'Free size', 'One size', or 'Стандарт'). "
+        "For non-clothing (bags, cosmetics, accessories, watches, decor), default sizes to ['Standart']. "
         "Ignore Chinese weight annotations in parentheses (e.g., extract 'M' from 'M码 (建议90-105斤)').\n"
         "6. colors: Array of product colors translated into aesthetic Uzbek names with emojis "
         "(e.g. ['Pushti 🌸', 'Oq 🤍', 'Qora 🖤', 'Havorang 🩵', 'Bej 🤎', 'Yashil 💚', 'Qizil ❤️', "
         "'Sariq 💛', 'Binafsha 💜', 'Kulrang 🩶', 'Jigarrang 🤎', 'Krem rang 🍦']).\n"
         "7. cargo_rate: Optional cargo rate per 100g in UZS if explicitly shown on the screenshot, otherwise null.\n"
-        "8. weight_grams: Optional item weight in grams if shown on the screenshot, otherwise null.\n\n"
+        "8. weight_grams: Optional item weight in grams if shown on the screenshot, otherwise null.\n"
+        "9. is_spec_screenshot: Boolean (true if this image is a mobile app screenshot e.g. Pinduoduo/1688/Taobao checkout screen, spec selection modal, size table, shopping cart, or price summary with UI buttons and specs; false if this image is a clean clothing model photo or product photography).\n\n"
         "Output ONLY a valid JSON object matching this schema:\n"
         "{\n"
         '  "title": "string",\n'
@@ -967,7 +1018,8 @@ async def extract_product_from_image(
         '  "sizes": ["string"],\n'
         '  "colors": ["string"],\n'
         '  "cargo_rate": null,\n'
-        '  "weight_grams": null\n'
+        '  "weight_grams": null,\n'
+        '  "is_spec_screenshot": true\n'
         "}"
     )
 
@@ -1042,4 +1094,5 @@ async def extract_product_from_image(
         "colors": [],
         "title": "",
         "category": "kiyim",
+        "is_spec_screenshot": False,
     }

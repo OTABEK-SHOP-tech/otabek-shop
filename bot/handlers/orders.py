@@ -14,8 +14,10 @@ from bot.services.premium_emojis import (
 )
 from db.models import Order, Admin, User, Setting
 from db.session import async_session_factory
+from bot.handlers.admin import is_user_admin
 
 router = Router(name="orders")
+router.message.filter(F.chat.type == "private")
 logger = logging.getLogger(__name__)
 
 PERMANENT_ADMINS = {8643984824, 8413799379}
@@ -41,14 +43,22 @@ async def edit_admin_message(callback: CallbackQuery, status_badge: str, admin_n
         logger.warning(f"Could not edit admin message: {e}")
 
 
-@router.message(F.photo | F.document)
+@router.message(F.chat.type == "private", F.photo | F.document)
 async def handle_receipt_upload(message: Message, state: FSMContext):
     """
     Detects when a customer uploads a payment receipt photo or document (including PDF receipts).
     Matches to latest awaiting_receipt order, saves receipt_photo_id,
     updates status to pending_approval, confirms to customer,
     and alerts admins with the photo/document and action buttons.
+    CRITICAL: ONLY operates in private user chats. NEVER responds in groups, supergroups, or channels!
     """
+    chat_type = getattr(getattr(message, "chat", None), "type", None)
+    if chat_type and chat_type in ("group", "supergroup", "channel"):
+        return
+
+    if await is_user_admin(message.from_user.id if message.from_user else 0):
+        return
+
     cur_state = await state.get_state()
     if cur_state is not None:
         return

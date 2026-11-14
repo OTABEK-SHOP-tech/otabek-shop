@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery, FSInputFile, InlineKeyboardMar
 from sqlalchemy import select
 
 from api.config import settings
-from api.services.formatters import format_price, calculate_cargo
+from api.services.formatters import format_price, calculate_cargo, strip_private_pricing_data
 from bot.keyboards.reply import get_main_reply_keyboard, make_webapp_inline_btn
 from bot.services.premium_emojis import upgrade_to_premium_emojis
 from bot.services.subscription import (
@@ -23,6 +23,7 @@ from db.models import User, Admin, Setting, Product, Review
 from db.session import async_session_factory
 
 router = Router(name="start")
+router.message.filter(F.chat.type == "private")
 logger = logging.getLogger(__name__)
 
 
@@ -283,7 +284,9 @@ async def handle_start(message: Message, command: CommandObject):
                     await session.commit()
 
                     cargo = calculate_cargo(product.weight_grams)
-                    desc_text = f"\n\n{product.description}" if product.description else ""
+                    clean_title = strip_private_pricing_data(product.title) or product.title
+                    clean_desc = strip_private_pricing_data(product.description or "")
+                    desc_text = f"\n\n{clean_desc}" if clean_desc else ""
                     stock_badge = "" if product.in_stock else "\n\n❌ <b>Sotildi (Hozirda mavjud emas)</b>"
 
                     contact_val = "MOONLIGHT_ADMINNN"
@@ -298,7 +301,7 @@ async def handle_start(message: Message, command: CommandObject):
                     contact_link = f"https://t.me/{contact_val}" if contact_val.startswith("+") else f"https://t.me/{contact_val.lstrip('@')}"
 
                     text = (
-                        f"🌙 <b>{escape(str(product.title))}</b>\n"
+                        f"🌙 <b>{escape(str(clean_title))}</b>\n"
                         f"💰 <b>Narxi:</b> {format_price(product.price)}\n"
                         f"📦 <b>Kargo:</b> ~{format_price(cargo)}"
                         f"{desc_text}"
@@ -306,22 +309,21 @@ async def handle_start(message: Message, command: CommandObject):
                         f"💌 Buyurtma berish uchun {contact_display} ga yozing"
                     )
 
-                    markup = InlineKeyboardMarkup(
-                        inline_keyboard=[
-                            [
-                                InlineKeyboardButton(
-                                    text="🛍️ Do'konda ochish",
-                                    web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?product={product.id}"),
-                                )
-                            ],
-                            [
-                                InlineKeyboardButton(
-                                    text="💌 Admin bilan bog'lanish",
-                                    url=contact_link,
-                                )
-                            ]
-                        ]
-                    )
+                    buttons = []
+                    if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
+                        buttons.append([
+                            InlineKeyboardButton(
+                                text="🛍️ Do'konda ochish",
+                                web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?product={product.id}"),
+                            )
+                        ])
+                    buttons.append([
+                        InlineKeyboardButton(
+                            text="💌 Admin bilan bog'lanish (Buyurtma)",
+                            url=contact_link,
+                        )
+                    ])
+                    markup = InlineKeyboardMarkup(inline_keyboard=buttons)
 
                     # Send with photo if available
                     media_dir = Path(settings.MEDIA_CACHE_DIR)
@@ -360,12 +362,13 @@ async def handle_new_products(message: Message):
 
         lines = ["🌸 <b>Yangi mahsulotlar:</b>\n"]
         for p in prods:
-            lines.append(f"• <b>{escape(str(p.title))}</b> — {format_price(p.price)}")
+            clean_p_title = strip_private_pricing_data(p.title) or p.title
+            lines.append(f"• <b>{escape(str(clean_p_title))}</b> — {format_price(p.price)}")
         lines.append(f"\n🛍️ Do'konni ochish tugmasini bosing:")
 
         markup = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🌸 Do'konni ochish", web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=new"))]
+                [make_webapp_inline_btn("🌸 Do'konni ochish", f"{settings.WEBAPP_URL}?tab=new")]
             ]
         )
         await message.answer("\n".join(lines), reply_markup=markup)

@@ -273,17 +273,18 @@ def test_build_channel_caption_adapted_moonlight_style():
 
     assert "#hoodie 🌸" in caption
     assert "Pushti Vintage Hoodie" in caption
-    assert "🎟️ Narx: 124.000 so'm" in caption
-    assert "🐾 Razmer: S-2XL" in caption
-    assert "🌸 Kargo: 12.000 so'm / 100g (alohida)" in caption
-    assert "⏳ Yetkazib berish: 10–15 kun ichida" in caption
-    assert "✔️ Otzivlar: @moonlight_shop_otzv" in caption
+    assert "<blockquote>" in caption
+    assert "Narx:</b> 124.000 so'm" in caption
+    assert "Razmer:</b> S-2XL" in caption
+    assert "Kargo:</b> 100gr – 12.000 so'm (alohida)" in caption
+    assert "Yetkazib berish:</b> 10–15 kun ichida" in caption
+    assert "Отзывы:</b> @moonlight_shop_otzv" in caption
     assert "@MOONLIGHT_ADMINNN" in caption
 
     # Check Telegram premium upgrade
     upgraded = upgrade_to_premium_emojis(caption)
     assert '<tg-emoji' in upgraded
-    assert '5377599075237502153' in upgraded  # TG_TICKET custom emoji (🎟️)
+    assert '5377660214096974712' in upgraded  # TG_TICKET custom emoji (🎟️)
 
 
 def test_parse_chinese_yuan_prices():
@@ -377,9 +378,10 @@ def test_build_channel_caption_dual_tariffs_avia_and_avto():
         adapted_style=True,
     )
 
-    assert "✈️ AVIA: 14.000 so'm / 100g (7–9 kun)" in caption
-    assert "🚗 AVTO: 10.000 so'm / 100g (14–18 kun)" in caption
-    assert "✔️ Otzivlar: @moonlight_shop_otzv" in caption
+    assert "<blockquote>" in caption
+    assert "Kargo (100g):</b> AVIA 14.000 | AVTO 10.000" in caption
+    assert "Yetkazib berish:</b> 7–9 kun (AVIA) / 14–18 kun (AVTO)" in caption
+    assert "Отзывы:</b> @moonlight_shop_otzv" in caption
     assert "@MOONLIGHT_ADMINNN" in caption
 
 
@@ -563,7 +565,7 @@ def test_order_notifier_centralized_emojis():
     assert on.TG_MONEY == pe.TG_MONEY
     assert on.TG_PRODUCT == pe.TG_PRODUCT
     assert on.TG_TIME == pe.TG_TIME
-    assert "5440354006335495210" in on.TG_SAKURA
+    assert "5201873494798776013" in on.TG_SAKURA
 
 
 @pytest.mark.asyncio
@@ -648,6 +650,685 @@ async def test_admin_broadcast_with_retry_after(test_db_session):
         status_mock.edit_text.assert_called_once()
         summary_output = status_mock.edit_text.call_args.args[0]
         assert "Yetkazildi: <b>1</b>" in summary_output
+
+
+def test_color_map_kofe_variations():
+    from api.services.vision_ocr import normalize_color, COLOR_MAP
+    assert COLOR_MAP["кофе"] == "Jigarrang 🤎"
+    assert COLOR_MAP["kofe"] == "Jigarrang 🤎"
+    assert COLOR_MAP["kofe rang"] == "Jigarrang 🤎"
+    assert normalize_color("кофе") == "Jigarrang 🤎"
+    assert normalize_color("kofe") == "Jigarrang 🤎"
+    assert normalize_color("kofe rang") == "Jigarrang 🤎"
+
+
+@pytest.mark.asyncio
+async def test_setup_bot_commands():
+    from bot.bot import setup_bot_commands
+    mock_bot = AsyncMock()
+    await setup_bot_commands(mock_bot)
+    mock_bot.set_my_commands.assert_called_once()
+    cmds = mock_bot.set_my_commands.call_args[0][0]
+    boost_cmd = next((c for c in cmds if c.command == "boost"), None)
+    assert boost_cmd is not None
+    assert "AI Vision" in boost_cmd.description
+
+
+@pytest.mark.asyncio
+async def test_orders_receipt_ignores_admin_photos():
+    from bot.handlers.orders import handle_receipt_upload
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=8643984824)
+    msg.photo = [MagicMock(file_id="admin_photo_1")]
+    msg.document = None
+    state = AsyncMock()
+    with patch("bot.handlers.orders.is_user_admin", AsyncMock(return_value=True)):
+        res = await handle_receipt_upload(msg, state)
+        assert res is None
+        state.get_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_boost_command_direct_photo():
+    from bot.handlers.admin import handle_boost_command
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.photo = [MagicMock(file_id="boost_photo_1")]
+    msg.reply_to_message = None
+    msg.caption = "/boost"
+    msg.text = None
+    state = AsyncMock()
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.handlers.admin.handle_importable_post", AsyncMock()) as mock_import:
+        await handle_boost_command(msg, state)
+        mock_import.assert_called_once_with(msg, state)
+
+
+@pytest.mark.asyncio
+async def test_boost_command_replied_photo():
+    from bot.handlers.admin import handle_boost_command
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.photo = None
+    replied = MagicMock()
+    replied.photo = [MagicMock(file_id="replied_photo_1")]
+    msg.reply_to_message = replied
+    msg.text = "/boost"
+    state = AsyncMock()
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.handlers.admin.handle_importable_post", AsyncMock()) as mock_import:
+        await handle_boost_command(msg, state)
+        mock_import.assert_called_once_with(replied, state)
+
+
+@pytest.mark.asyncio
+async def test_boost_command_buffered_photos():
+    from bot.handlers.admin import handle_boost_command
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.photo = None
+    msg.reply_to_message = None
+    msg.text = "/boost"
+    msg.caption = None
+    state = AsyncMock()
+    state.get_data.return_value = {"photos": ["buffered_photo_1", "buffered_photo_2"]}
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.handlers.admin.process_product_import", AsyncMock()) as mock_proc:
+        await handle_boost_command(msg, state)
+        mock_proc.assert_called_once()
+        call_kwargs = mock_proc.call_args.kwargs
+        assert call_kwargs["photos"] == ["buffered_photo_1", "buffered_photo_2"]
+        assert "AI Vision Boost" in call_kwargs["source_label"]
+
+
+@pytest.mark.asyncio
+async def test_boost_command_plain_text_clears_stuck_state():
+    from bot.handlers.admin import handle_boost_command
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.photo = None
+    msg.reply_to_message = None
+    msg.text = "/boost"
+    msg.caption = None
+    msg.answer = AsyncMock()
+    state = AsyncMock()
+    state.get_data.return_value = {}
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)):
+        await handle_boost_command(msg, state)
+        state.clear.assert_called_once()
+        msg.answer.assert_called_once()
+
+
+def test_is_importable_message_boost_and_photo():
+    from bot.handlers.admin import is_importable_message
+    # Plain photo without text
+    msg1 = MagicMock(photo=[MagicMock()], caption=None, text=None, forward_origin=None, forward_from_chat=None, forward_date=None)
+    assert is_importable_message(msg1) is True
+
+    # /boost text
+    msg2 = MagicMock(photo=None, caption=None, text="/boost", forward_origin=None, forward_from_chat=None, forward_date=None)
+    assert is_importable_message(msg2) is True
+
+    # /BOOST in caption
+    msg3 = MagicMock(photo=None, caption="/BOOST status", text=None, forward_origin=None, forward_from_chat=None, forward_date=None)
+    assert is_importable_message(msg3) is True
+
+    # /cancel command should NOT be importable
+    msg4 = MagicMock(photo=None, caption=None, text="/cancel", forward_origin=None, forward_from_chat=None, forward_date=None)
+    assert is_importable_message(msg4) is False
+
+
+@pytest.mark.asyncio
+async def test_handle_importable_post_clears_stuck_state():
+    from bot.handlers.admin import handle_importable_post, ProductWizard
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.photo = [MagicMock(file_id="photo_1")]
+    msg.media_group_id = None
+    msg.caption = "95000 so'm"
+    msg.text = None
+    state = AsyncMock()
+    state.get_state.return_value = ProductWizard.price.state
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.handlers.admin.process_product_import", AsyncMock()) as mock_proc:
+        await handle_importable_post(msg, state)
+        state.clear.assert_called_once()
+        mock_proc.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_media_group_dedup_and_boost_bypass():
+    import time
+    from bot.handlers.admin import handle_importable_post, _processed_media_groups
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.photo = [MagicMock(file_id="album_photo_1")]
+    msg.media_group_id = "test_mg_123"
+    msg.caption = "Normal album caption"
+    msg.text = None
+    state = AsyncMock()
+    state.get_state.return_value = None
+
+    _processed_media_groups["test_mg_123"] = time.time()
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.handlers.admin.process_product_import", AsyncMock()) as mock_proc:
+        await handle_importable_post(msg, state)
+        # Should be ignored due to dedup
+        mock_proc.assert_not_called()
+
+        # Now test with /boost caption -> bypasses dedup!
+        msg.caption = "/boost new album"
+        await handle_importable_post(msg, state)
+        mock_proc.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_product_import_inspects_all_album_photos():
+    from bot.handlers.admin import process_product_import
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.bot = MagicMock()
+    msg.answer = AsyncMock()
+    state = AsyncMock()
+
+    inspected_photos = []
+
+    async def fake_extract(image_bytes):
+        inspected_photos.append(image_bytes)
+        if b"p1" in image_bytes:
+            return {
+                "success": True,
+                "source_price": 50000,
+                "sizes": ["S", "M", "L"],
+                "colors": ["Oq 🤍", "Qora 🖤"],
+            }
+        return {"success": True}
+
+    with patch("bot.handlers.admin.extract_product_from_image", side_effect=fake_extract), \
+         patch("bot.handlers.admin.show_product_import_summary", AsyncMock()), \
+         patch("bot.handlers.admin.async_session_factory"):
+        photos = [b"p0", b"p1", b"p2", b"p3"]
+        await process_product_import(
+            message=msg,
+            state=state,
+            raw_text="Mahsulot",
+            photos=photos,
+        )
+
+    assert inspected_photos == [b"p3", b"p0", b"p1"]
+
+
+@pytest.mark.asyncio
+async def test_boost_replied_photo_from_non_admin_sender():
+    from bot.handlers.admin import handle_boost_command, handle_importable_post
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=8413799379)  # Admin user
+    msg.photo = None
+    msg.text = "/boost"
+    msg.caption = None
+
+    replied = MagicMock()
+    replied.from_user = MagicMock(id=999999)  # Non-admin sender (customer/channel/supplier)
+    replied.photo = [MagicMock(file_id="supplier_photo_1")]
+    replied.caption = None
+    replied.text = None
+    replied.media_group_id = None
+    msg.reply_to_message = replied
+
+    state = AsyncMock()
+    state.get_state.return_value = None
+
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(side_effect=lambda uid: uid == 8413799379)), \
+         patch("bot.handlers.admin.process_product_import", AsyncMock()) as mock_proc:
+        await handle_boost_command(msg, state)
+        mock_proc.assert_called_once()
+        call_kwargs = mock_proc.call_args.kwargs
+        assert call_kwargs["photos"] == ["supplier_photo_1"]
+        assert "AI Vision Boost" in call_kwargs["source_label"]
+
+
+@pytest.mark.asyncio
+async def test_boost_replied_photo_with_extra_arguments():
+    from bot.handlers.admin import handle_boost_command
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=8413799379)
+    msg.photo = None
+    msg.text = "/boost 65000 so'm"
+    msg.caption = None
+
+    replied = MagicMock()
+    replied.from_user = MagicMock(id=999999)
+    replied.photo = [MagicMock(file_id="supplier_photo_2")]
+    replied.caption = None
+    replied.text = None
+    replied.media_group_id = None
+    msg.reply_to_message = replied
+
+    state = AsyncMock()
+    state.get_state.return_value = None
+
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(side_effect=lambda uid: uid == 8413799379)), \
+         patch("bot.handlers.admin.process_product_import", AsyncMock()) as mock_proc:
+        await handle_boost_command(msg, state)
+        mock_proc.assert_called_once()
+        call_kwargs = mock_proc.call_args.kwargs
+        assert "65000 so'm" in call_kwargs["raw_text"]
+
+
+@pytest.mark.asyncio
+async def test_media_group_dedup_bypass_caption_contains_boost():
+    import time
+    from bot.handlers.admin import handle_importable_post, _processed_media_groups
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.photo = [MagicMock(file_id="album_photo_middle_boost")]
+    msg.media_group_id = "test_mg_contains_boost"
+    msg.caption = "Yangi mahsulot #jempir 75000 /boost"
+    msg.text = None
+    state = AsyncMock()
+    state.get_state.return_value = None
+
+    _processed_media_groups["test_mg_contains_boost"] = time.time()
+    with patch("bot.handlers.admin.is_user_admin", AsyncMock(return_value=True)), \
+         patch("bot.handlers.admin.process_product_import", AsyncMock()) as mock_proc:
+        await handle_importable_post(msg, state)
+        mock_proc.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_product_import_accumulates_distinct_colors_across_album():
+    from bot.handlers.admin import process_product_import
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.bot = MagicMock()
+    msg.answer = AsyncMock()
+    state = AsyncMock()
+
+    async def fake_extract(image_bytes):
+        if b"slide_1" in image_bytes:
+            return {
+                "success": True,
+                "source_price": 40000,
+                "sizes": ["S", "M", "L"],
+                "colors": ["Pushti 🌸"],
+            }
+        elif b"slide_2" in image_bytes:
+            return {
+                "success": True,
+                "colors": ["Oq 🤍"],
+            }
+        return {"success": True}
+
+    with patch("bot.handlers.admin.extract_product_from_image", side_effect=fake_extract), \
+         patch("bot.handlers.admin.show_product_import_summary", AsyncMock()), \
+         patch("bot.handlers.admin.async_session_factory"):
+        # photos_to_check will be: slide_2 (last), then slide_1 (first)
+        photos = [b"slide_1", b"slide_2"]
+        await process_product_import(
+            message=msg,
+            state=state,
+            raw_text="Mahsulot",
+            photos=photos,
+        )
+
+    updated_data = state.update_data.call_args.kwargs
+    assert "Pushti 🌸" in updated_data["colors"]
+    assert "Oq 🤍" in updated_data["colors"]
+
+
+@pytest.mark.asyncio
+async def test_process_product_import_stops_early_for_single_color():
+    from bot.handlers.admin import process_product_import
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.bot = MagicMock()
+    msg.answer = AsyncMock()
+    state = AsyncMock()
+
+    inspected = []
+
+    async def fake_extract(image_bytes):
+        inspected.append(image_bytes)
+        if b"p_last" in image_bytes:
+            return {
+                "success": True,
+                "source_price": 50000,
+                "sizes": ["S", "M", "L"],
+                "colors": ["Qora 🖤"],
+            }
+        return {"success": True}
+
+    with patch("bot.handlers.admin.extract_product_from_image", side_effect=fake_extract), \
+         patch("bot.handlers.admin.show_product_import_summary", AsyncMock()), \
+         patch("bot.handlers.admin.async_session_factory"):
+        photos = [b"p_first", b"p_middle", b"p_last"]
+        await process_product_import(
+            message=msg,
+            state=state,
+            raw_text="Mahsulot",
+            photos=photos,
+        )
+
+    # p_last is checked first, and since it had price, sizes, and colors, loop breaks immediately!
+    assert inspected == [b"p_last"]
+
+
+@pytest.mark.asyncio
+async def test_process_product_import_handles_photosize_objects():
+    from bot.handlers.admin import process_product_import
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    mock_bot = MagicMock()
+    mock_dl = AsyncMock()
+    mock_dl.read = MagicMock(return_value=b"downloaded_bytes")
+    mock_dl.seek = MagicMock()
+    mock_bot.download = AsyncMock(return_value=mock_dl)
+    msg.bot = mock_bot
+    msg.answer = AsyncMock()
+    state = AsyncMock()
+
+    photo_size_obj = MagicMock()
+    photo_size_obj.file_id = "photosize_file_id_999"
+
+    with patch("bot.handlers.admin.extract_product_from_image", AsyncMock(return_value={"success": True, "source_price": 30000, "sizes": ["Standart"], "colors": ["Bej 🤎"]})), \
+         patch("bot.handlers.admin.show_product_import_summary", AsyncMock()), \
+         patch("bot.handlers.admin.async_session_factory"):
+        await process_product_import(
+            message=msg,
+            state=state,
+            raw_text="Mahsulot",
+            photos=[photo_size_obj],
+        )
+
+    mock_bot.download.assert_called_once_with("photosize_file_id_999")
+
+
+def test_is_phone_screenshot_aspect_ratio():
+    from api.services.vision_ocr import is_phone_screenshot
+    from PIL import Image
+    import io
+
+    # 1. Phone screenshot: 1080 x 2400 (aspect ratio 2.22)
+    img_screen = Image.new("RGB", (1080, 2400), color="white")
+    buf_screen = io.BytesIO()
+    img_screen.save(buf_screen, format="JPEG")
+    assert is_phone_screenshot(buf_screen.getvalue()) is True
+
+    # 2. Square product photo: 800 x 800 (aspect ratio 1.0)
+    img_square = Image.new("RGB", (800, 800), color="pink")
+    buf_square = io.BytesIO()
+    img_square.save(buf_square, format="JPEG")
+    assert is_phone_screenshot(buf_square.getvalue()) is False
+
+    # 3. Model portrait photo: 750 x 1000 (aspect ratio 1.33)
+    img_portrait = Image.new("RGB", (750, 1000), color="pink")
+    buf_portrait = io.BytesIO()
+    img_portrait.save(buf_portrait, format="JPEG")
+    assert is_phone_screenshot(buf_portrait.getvalue()) is False
+
+
+@pytest.mark.asyncio
+async def test_album_spec_screenshot_excluded_from_product_photos():
+    """
+    Verifies that when an album containing both a model photo and a spec/checkout screenshot
+    is imported, the spec screenshot is excluded from product.photos, keeping only clean model photos.
+    """
+    from bot.handlers.admin import process_product_import
+    from PIL import Image
+    import io
+
+    # Model photo (square 800x800)
+    img_model = Image.new("RGB", (800, 800), color="pink")
+    buf_model = io.BytesIO()
+    img_model.save(buf_model, format="JPEG")
+    model_bytes = buf_model.getvalue()
+
+    # Spec screenshot (vertical 1080x2400)
+    img_spec = Image.new("RGB", (1080, 2400), color="white")
+    buf_spec = io.BytesIO()
+    img_spec.save(buf_spec, format="JPEG")
+    spec_bytes = buf_spec.getvalue()
+
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=112233)
+    msg.answer = AsyncMock()
+    state = AsyncMock()
+
+    async def fake_extract(img_bytes):
+        if img_bytes == spec_bytes:
+            return {
+                "success": True,
+                "source_price": 55000,
+                "sizes": ["M"],
+                "colors": ["Pushti 🌸"],
+                "is_spec_screenshot": True,
+            }
+        return {"success": False}
+
+    with patch("bot.handlers.admin.extract_product_from_image", side_effect=fake_extract), \
+         patch("bot.handlers.admin.show_product_import_summary", AsyncMock()), \
+         patch("bot.handlers.admin.async_session_factory"):
+        photos = [model_bytes, spec_bytes]
+        await process_product_import(
+            message=msg,
+            state=state,
+            raw_text="Mahsulot",
+            photos=photos,
+        )
+
+    # State update_data must receive ONLY the clean model photo!
+    state_call_kwargs = state.update_data.call_args[1]
+    saved_photos = state_call_kwargs.get("photos", [])
+    assert len(saved_photos) == 1
+    assert saved_photos[0] == model_bytes
+    assert spec_bytes not in saved_photos
+
+
+@pytest.mark.asyncio
+async def test_channel_post_inline_button_and_deep_link(test_db_session):
+    """
+    Verifies that post_product_to_channel attaches an InlineKeyboardButton
+    with text "🛍️ Do'konda xarid qilish" and uses the deep link
+    https://t.me/{bot_username}?start=product_{product.id}
+    (never startapp when WEBAPP_URL is not HTTPS), preventing "Invalid" popups.
+    """
+    async with test_db_session() as session:
+        cat = Category(slug="dress", name="Dress", emoji="👗", sort_order=1)
+        session.add(cat)
+        prod = Product(
+            id=1234,
+            title="Elegant Ko'ylak",
+            price=150000,
+            source_price=100000,
+            category="dress",
+            photos=["clean_dress.jpg"],
+            sizes=["S", "M", "L"],
+        )
+        session.add(prod)
+        res_ch = await session.execute(select(Setting).where(Setting.key == "channel_id"))
+        ch = res_ch.scalars().first()
+        if ch:
+            ch.value = "@moonlight_chinese_shop"
+        else:
+            session.add(Setting(key="channel_id", value="@moonlight_chinese_shop"))
+        await session.commit()
+
+    captured_kwargs = {}
+
+    async def fake_send_photo(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        msg = MagicMock()
+        msg.message_id = 888
+        return msg
+
+    with patch("bot.services.channel_post.async_session_factory", test_db_session), \
+         patch("bot.services.channel_post.bot") as mock_bot:
+        mock_bot.get_me = AsyncMock(return_value=MagicMock(username="moonlight_chinese_bot"))
+        mock_bot.send_photo = AsyncMock(side_effect=fake_send_photo)
+
+        res = await post_product_to_channel(prod)
+        assert res["success"] is True
+
+    # Verify InlineKeyboardButton attached to send_photo
+    reply_markup = captured_kwargs.get("reply_markup")
+    assert reply_markup is not None
+    button = reply_markup.inline_keyboard[0][0]
+    assert "Do'konda xarid qilish" in button.text
+    # Deep link must be https://t.me/moonlight_chinese_bot?start=product_1234
+    assert button.url == "https://t.me/moonlight_chinese_bot?start=product_1234"
+    assert "startapp=" not in button.url
+
+
+def test_is_phone_screenshot_16_9_ratio():
+    from api.services.vision_ocr import is_phone_screenshot
+    from PIL import Image
+    import io
+
+    # 16:9 phone screenshot: 1080 x 1920 (aspect ratio 1.777)
+    img_16_9 = Image.new("RGB", (1080, 1920), color="white")
+    buf_16_9 = io.BytesIO()
+    img_16_9.save(buf_16_9, format="JPEG")
+    assert is_phone_screenshot(buf_16_9.getvalue()) is True
+
+    # 16:9 high res screenshot: 1440 x 2560 (ratio 1.777)
+    img_qhd = Image.new("RGB", (1440, 2560), color="white")
+    buf_qhd = io.BytesIO()
+    img_qhd.save(buf_qhd, format="JPEG")
+    assert is_phone_screenshot(buf_qhd.getvalue()) is True
+
+
+@pytest.mark.asyncio
+async def test_start_product_deep_link_safe_when_webapp_not_https(test_db_session):
+    """
+    Verifies that when /start product_{id} is received and WEBAPP_URL is not HTTPS,
+    the bot returns product details with contact button and never crashes with
+    Telegram server 'Only HTTPS links are allowed' error.
+    """
+    from bot.handlers.start import handle_start
+    from aiogram.filters import CommandObject
+
+    async with test_db_session() as session:
+        cat = Category(slug="dress2", name="Dress2", emoji="👗", sort_order=2)
+        session.add(cat)
+        prod = Product(
+            id=5555,
+            title="Qora Ko'ylak",
+            price=180000,
+            category="dress2",
+            photos=[],
+            sizes=["S", "M"],
+        )
+        session.add(prod)
+        await session.commit()
+
+    msg = MagicMock()
+    msg.from_user = MagicMock(id=999888, full_name="User", username="testuser")
+    msg.answer = AsyncMock()
+    msg.answer_photo = AsyncMock()
+
+    cmd = CommandObject(prefix="/", command="start", args="product_5555")
+
+    with patch("bot.handlers.start.async_session_factory", test_db_session), \
+         patch("bot.handlers.start.settings.WEBAPP_URL", "http://localhost:8001"):
+        await handle_start(msg, cmd)
+
+    assert msg.answer.call_count == 1
+    call_args = msg.answer.call_args
+    sent_text = call_args[0][0]
+    sent_markup = call_args[1].get("reply_markup")
+
+    import html
+    assert "Qora Ko'ylak" in html.unescape(sent_text)
+    assert sent_markup is not None
+    # Must NOT have any WebAppInfo button with HTTP!
+    for row in sent_markup.inline_keyboard:
+        for btn in row:
+            assert btn.web_app is None, "Found invalid WebAppInfo button on HTTP WEBAPP_URL!"
+            assert "http://localhost" not in (btn.url or "")
+
+
+@pytest.mark.asyncio
+async def test_wizard_price_not_hijacked_by_handle_importable_post(test_db_session):
+    """
+    Verifies that when an admin is in ProductWizard.price, sending '30 yuan'
+    routes directly to process_wizard_price, updates price/margin, and does NOT
+    wipe the wizard state or photos.
+    """
+    from bot.handlers.admin import handle_importable_post, ProductWizard
+    from aiogram.fsm.storage.memory import MemoryStorage
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.storage.base import StorageKey
+
+    storage = MemoryStorage()
+    key = StorageKey(bot_id=123, chat_id=8643984824, user_id=8643984824)
+    fsm_ctx = FSMContext(storage=storage, key=key)
+
+    # Admin already uploaded photo and title
+    await fsm_ctx.set_state(ProductWizard.price)
+    await fsm_ctx.set_data({
+        "photos": ["model_dress.jpg"],
+        "title": "Nafis Krujevali Ko'ylak",
+        "category": "dress",
+    })
+
+    msg = MagicMock()
+    msg.from_user.id = 8643984824
+    msg.photo = []
+    msg.media_group_id = None
+    msg.forward_origin = None
+    msg.forward_from_chat = None
+    msg.forward_date = None
+    msg.caption = None
+    msg.text = "30 yuan"
+    msg.answer = AsyncMock()
+
+    with patch("bot.handlers.admin.async_session_factory", test_db_session):
+        await handle_importable_post(msg, state=fsm_ctx)
+
+    # Photos and title must be preserved in state data
+    data = await fsm_ctx.get_data()
+    assert data["photos"] == ["model_dress.jpg"]
+    assert data["title"] == "Nafis Krujevali Ko'ylak"
+    assert data["source_price"] == 54000  # 30 * 1800
+    assert data["price"] == 73000  # 54000 with margin -> 73000 UZS
+
+
+@pytest.mark.asyncio
+async def test_post_product_to_channel_rejects_empty_photos(test_db_session):
+    """
+    Verifies that post_product_to_channel strictly refuses to post products
+    without photos to the channel.
+    """
+    from bot.services.channel_post import post_product_to_channel
+
+    prod = Product(
+        id=999,
+        title="30 yuan",
+        price=76000,
+        category="jempir",
+        photos=[],  # NO photos
+    )
+    res = await post_product_to_channel(prod)
+    assert res["success"] is False
+    assert "rasm" in res.get("error", "").lower()
+
+
+def test_parse_channel_post_pure_price_not_title():
+    """
+    Verifies that sending a pure price line like '30 yuan' or '¥55' is never
+    used as product title.
+    """
+    from api.services.formatters import parse_channel_post
+
+    res = parse_channel_post("30 yuan", apply_margin=True)
+    assert res["source_price"] == 54000
+    assert res["title"] != "30 yuan"
+    assert "Jempir" in res["title"]
+
+
+
+
+
 
 
 

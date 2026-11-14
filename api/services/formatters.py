@@ -17,6 +17,94 @@ def format_price(price: int) -> str:
     return f"{formatted} so'm"
 
 
+def strip_private_pricing_data(text: Optional[str]) -> str:
+    """
+    Strips supplier / original prices, profit percentages, and internal margin notes
+    from text to strictly guarantee customer and public channel privacy.
+    Ensures that customer-facing texts and channel posts only show the clean retail price.
+
+    Examples of stripped patterns:
+    - '+35% foyda', '35% foyda', '+30%', '+35%', 'foyda: 35%', 'foyda marjasi: 30%'
+    - 'Foyda: 20.000 so\'m', '20.000 so\'m foyda', 'Sof foyda: 25.000 so\'m', 'Ustama: 20.000 so\'m'
+    - 'Asl narxi (ta\'minotchi): 50.000 so\'m', 'Asl narxi: 50.000', 'Asl narhi: 50.000'
+    - 'Tannarx: 45.000', 'Tan narhi: 45000', 'Optom narx: 40000', 'optom 40k', 'optom 40 ming'
+    - 'Оптом 50000 сум', 'Опт: 50000 сум', 'Себестоимость: 3000', 'Закупка: 4500 руб', 'Закуп: 5000'
+    - '进货价: 35元', '成本: 35元', '批发价: 40'
+
+    NEVER strips harmless percentages like:
+    - '100% paxta', '95% paxta, 5% elastan', '100% original', '100% sifatli'
+    """
+    if not text:
+        return ""
+    s = str(text)
+    orig_lines = s.split("\n")
+
+    # Currency suffix pattern
+    curr = r"(?:so['’`]?m|som|сум|rub|руб|usd|dollar|доллар|yuan|rmb|юань|[¥￥$€元块])?"
+    # Price number pattern e.g. 50.000, 50 000, 50000, 50k, 50 ming
+    num = r"(?:\d{1,3}(?:[.\s]\d{3})+|\d+(?:[.,]\d+)?)\s*(?:k|ming)?"
+
+    # 1. Supplier / cost / wholesale price lines or phrases
+    supplier_pattern = (
+        r"(?i)(?:📥\s*)?(?:"
+        r"asl\s*nar[xh](?:i)?|"
+        r"ta['’`]?minotchi(?:\s*nar[xh](?:i)?)?|"
+        r"tan\s*nar[xh](?:i)?|tannar[xh](?:i)?|"
+        r"optom(?:\s*nar[xh](?:i)?)?|"
+        r"opt\b(?:\s*nar[xh](?:i)?|:)?|"
+        r"опт(?:ом)?\b(?:\s*цена|:)?|"
+        r"ulgurji(?:\s*nar[xh](?:i)?)?|"
+        r"исходная\s*цена|себестоимость|закупочная\s*цена|закупка|закуп\b|оптовая\s*цена|цена\s*поставщика|"
+        r"cost\s*price|source\s*price|supplier(?:\s*price)?|wholesale(?:\s*price)?|"
+        r"成本(?:价)?|进货价|进价|批发价|原价|拿货价"
+        r")"
+        r"(?:\s*\([^)]*\))?"
+        r"\s*[:\-–—=]?\s*"
+        rf"(?:[$¥￥€]\s*)?(?:{num})?\s*{curr}"
+    )
+    s = re.sub(supplier_pattern, "", s)
+
+    # 2. Profit margin / markup expressions (percentages or sum amounts)
+    profit_keywords = r"(?:sof\s*)?(?:foyda(?:si)?|marja(?:si)?|ustama|marzh|profit|прибыль|маржа|наценка)"
+
+    # 2a. Prefix keyword with percentage or sum amount: e.g. "Foyda: 35%", "Foyda: 20.000 so'm", "foyda marjasi: 30%"
+    profit_prefix = (
+        rf"(?i)(?:📈\s*)?{profit_keywords}(?:\s*marjasi)?"
+        rf"\s*[:\-–—=]?\s*(?:\+\s*)?(?:{num}\s*%?|(?:\d+(?:\.\d+)?%))\s*{curr}"
+    )
+    s = re.sub(profit_prefix, "", s)
+
+    # 2b. Suffix keyword with percentage or sum amount: e.g. "35% foyda", "20.000 so'm foyda", "35% ustama"
+    profit_suffix = (
+        rf"(?i)(?:📈\s*)?(?:(?:\+\s*)?{num}\s*%?|\d+(?:\.\d+)?%)\s*{curr}\s*{profit_keywords}"
+    )
+    s = re.sub(profit_suffix, "", s)
+
+    # 2c. Pure markup with plus sign: e.g. "+35%", "+ 35%", "+30.5%"
+    profit_pure_plus = r"(?i)(?:📈\s*)?\+\s*\d+(?:\.\d+)?%"
+    s = re.sub(profit_pure_plus, "", s)
+
+    # 3. Clean up empty parentheses, brackets, or dangling punctuation left over
+    s = re.sub(r"\(\s*[,;\s\-–—|/]*\)", "", s)
+    s = re.sub(r"\[\s*[,;\s\-–—|/]*\]", "", s)
+    s = re.sub(r"\{\s*[,;\s\-–—|/]*\}", "", s)
+
+    lines_after = s.split("\n")
+    cleaned_lines = []
+    for orig, line in zip(orig_lines, lines_after):
+        orig_s = orig.strip()
+        cl = re.sub(r"[ \t]+", " ", line).strip()
+        cl = re.sub(r"^\s*[:\-–—|/,;]\s*", "", cl).strip()
+        cl = re.sub(r"\s*[:\-–—|/,;]\s*$", "", cl).strip()
+        if orig_s and not cl:
+            continue
+        cleaned_lines.append(cl)
+
+    res = "\n".join(cleaned_lines)
+    res = re.sub(r"\n{3,}", "\n\n", res)
+    return res.strip()
+
+
 CARGO_STAGE_NAMES = {
     "china_warehouse": "🇨🇳 Xitoy omborida",
     "in_transit_border": "🚛 Xorgos chegarasida",
@@ -44,6 +132,17 @@ def mask_customer_name(name: Optional[str]) -> str:
     if len(clean) <= 2:
         return clean[0] + "***" if len(clean) >= 1 else "M***"
     return clean[0] + "*" * min(5, len(clean) - 2) + clean[-1]
+
+
+NON_CLOTHING_CATEGORIES = {
+    "sumka", "aksessuar", "kosmetika", "wig", "scarf", "soat", "dekor",
+}
+
+
+def is_non_clothing_category(cat: Optional[str]) -> bool:
+    if not cat:
+        return False
+    return cat.lower().replace("#", "").strip() in NON_CLOTHING_CATEGORIES
 
 
 STANDARD_SIZES = ["XXS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"]
@@ -76,7 +175,16 @@ CYRILLIC_TO_LATIN_CATEGORY = {
     "туфли": "shoes",
     "аксессуар": "aksessuar",
     "аксессуары": "aksessuar",
+    "бижутерия": "aksessuar",
     "косметика": "kosmetika",
+    "помада": "kosmetika",
+    "духи": "kosmetika",
+    "парфюм": "kosmetika",
+    "крем": "kosmetika",
+    "часы": "soat",
+    "декор": "dekor",
+    "игрушка": "dekor",
+    "игрушки": "dekor",
     "штаны": "shim",
     "брюки": "shim",
     "джинсы": "shim",
@@ -116,6 +224,17 @@ def parse_sizes(raw_sizes: str) -> List[str]:
     # 1. Strip common prefixes like 'Razmer:', 'O'lcham:', '👗', etc.
     clean = re.sub(
         r"^(?:👗\s*)?(?:razmer(?:lar|i)?|o['’`]?lcham(?:lar|i)?|размер(?:ы)?|size(?:s)?)\s*[:\-]?\s*",
+        "",
+        clean,
+        flags=re.IGNORECASE,
+    ).strip()
+    if not clean:
+        return []
+
+    # 1a. Strip bracketed weight / recommendation notes (e.g. "【建议90-105斤】", "(80-120斤)", "【80-95斤】")
+    # so they are never mistakenly matched as shoe/numeric size ranges
+    clean = re.sub(
+        r"[（(【\[][^）)】\]]*(?:斤|kg|建议|适合|вес|weight|recom)[^）)】\]]*[）)】\]]",
         "",
         clean,
         flags=re.IGNORECASE,
@@ -178,21 +297,34 @@ def parse_sizes(raw_sizes: str) -> List[str]:
     return result
 
 
-def format_sizes_display(sizes: Optional[List[str]]) -> str:
-    """Format list of sizes for display, e.g. ['S', 'M', 'L', 'XL', '2XL'] -> 'S-2XL'."""
+def format_sizes_display(sizes: Optional[List[str]], enumerate_all: bool = False) -> str:
+    """
+    Format list of sizes for display.
+    - When 1 to 4 sizes: always enumerates them all (e.g. ['S', 'M', 'L', 'XL'] -> 'S, M, L, XL')
+      so customers clearly see every individual size rather than mistaking a range for only 2 sizes.
+    - When 5 or more continuous sizes and enumerate_all=False: formats as 'S-2XL' or '36-40'.
+    - If enumerate_all=True: always enumerates all sizes.
+    """
     if not sizes:
         return ""
-    # If matches a continuous standard range, format as Start-End
-    if len(sizes) >= 3 and all(s in STANDARD_SIZES for s in sizes):
-        indices = [STANDARD_SIZES.index(s) for s in sizes]
-        if indices == list(range(indices[0], indices[-1] + 1)):
-            return f"{sizes[0]}-{sizes[-1]}"
-    # Numeric range
-    if len(sizes) >= 3 and all(s.isdigit() for s in sizes):
-        nums = [int(s) for s in sizes]
-        if nums == list(range(nums[0], nums[-1] + 1)):
-            return f"{sizes[0]}-{sizes[-1]}"
-    return ", ".join(sizes)
+    clean_sizes = [str(s).strip() for s in sizes if s and str(s).strip()]
+    if not clean_sizes:
+        return ""
+
+    if not enumerate_all:
+        # Standard letter sizes: compress to Start-End ONLY if 5 or more continuous sizes (e.g. S-2XL)
+        if len(clean_sizes) >= 5 and all(s in STANDARD_SIZES for s in clean_sizes):
+            indices = [STANDARD_SIZES.index(s) for s in clean_sizes]
+            if indices == list(range(indices[0], indices[-1] + 1)):
+                return f"{clean_sizes[0]}-{clean_sizes[-1]}"
+
+        # Numeric shoes/clothing range: compress ONLY if 5 or more continuous sizes (e.g. 36-40)
+        if len(clean_sizes) >= 5 and all(s.isdigit() for s in clean_sizes):
+            nums = [int(s) for s in clean_sizes]
+            if nums == list(range(nums[0], nums[-1] + 1)):
+                return f"{clean_sizes[0]}-{clean_sizes[-1]}"
+
+    return ", ".join(clean_sizes)
 
 
 def calculate_margin_percent(source_price: int) -> float:
@@ -212,16 +344,25 @@ def calculate_margin_percent(source_price: int) -> float:
         return 25.0
 
 
-def calculate_retail_price(source_price: int, margin_percent: Optional[float] = None) -> int:
+def calculate_retail_price(
+    source_price: int,
+    margin_percent: Optional[float] = None,
+    clamp: bool = True,
+) -> int:
     """
-    Adds 25%-35% profit margin to source price and rounds to clean 1,000 so'm.
+    Adds profit margin to source price and rounds to clean 1,000 so'm.
     Example: 95.000 + 30% = 123.500 -> 124.000 so'm.
+    If clamp=True, clamps margin between 25% and 35%.
+    If clamp=False, allows any custom margin (e.g. 5% to 100%).
     """
     if not source_price or source_price <= 0:
         return 0
     if margin_percent is None:
         margin_percent = calculate_margin_percent(source_price)
-    margin_percent = max(25.0, min(35.0, float(margin_percent)))
+    elif clamp:
+        margin_percent = max(25.0, min(35.0, float(margin_percent)))
+    else:
+        margin_percent = float(margin_percent)
     raw_retail = source_price * (1.0 + margin_percent / 100.0)
     # Round to nearest clean 1,000 so'm
     return int(round(raw_retail / 1000.0) * 1000)
@@ -312,14 +453,22 @@ def build_channel_caption(
     reviews_channel: Optional[str] = None,
     cargo_separate: bool = False,
     adapted_style: bool = False,
+    webapp_url: Optional[str] = None,
+    source_price: Optional[int] = None,
+    margin_percent: Optional[float] = None,
+    **kwargs: Any,
 ) -> str:
     """
     Build channel post caption.
     Supports both legacy format (for backward compatibility) and
     adapted Moonlight brand format with sizes, reviews channel, and separate cargo.
     When cargo_rate_avia & cargo_rate_avto are provided, it presents both AVIA and AVTO tariffs.
+
+    PRIVACY GUARANTEE:
+    Supplier prices ("Asl narxi") and profit margins ("+35% foyda") are NEVER shown
+    in customer-facing channel captions. Only the clean retail price is displayed.
     """
-    clean_cat = category_slug.replace("#", "").strip()
+    clean_cat = strip_private_pricing_data(category_slug).replace("#", "").strip()
     tag_line = f"#{clean_cat} 🌸"
 
     clean_title = ""
@@ -327,6 +476,7 @@ def build_channel_caption(
         # Strip leading & trailing decorative flowers/sparkles/hashes
         clean_title = re.sub(r"^[\s✨🌸🎀#]+", "", title).strip()
         clean_title = re.sub(r"[\s✨🌸🎀]+$", "", clean_title).strip()
+        clean_title = strip_private_pricing_data(clean_title)
 
     if clean_title:
         header_line = f"{tag_line}\n✨ {escape(clean_title)}"
@@ -340,37 +490,52 @@ def build_channel_caption(
     )
 
     if adapted_style or reviews_channel:
-        # Moonlight adapted channel format (Sakura aesthetic)
-        lines = [
-            header_line,
-            f"🎟️ Narx: {format_price(price)}",
-        ]
+        # Moonlight aesthetic channel format (compact, blockquote note card)
         sizes_display = format_sizes_display(sizes) if sizes else "Standart"
-        lines.append(f"🐾 Razmer: {sizes_display}")
+        rev_handle = reviews_channel.lstrip("@") if reviews_channel else "moonlight_shop_otzv"
+
+        quote_lines = []
+        if clean_title:
+            quote_lines.append(f"✨ <b>{escape(clean_title)}</b>")
+        quote_lines.append(f"🎟️ <b>Narx:</b> {format_price(price)}")
+        if is_non_clothing_category(clean_cat):
+            if clean_cat in ("kosmetika", "aksessuar", "dekor", "soat"):
+                if sizes and sizes != ["Standart"]:
+                    quote_lines.append(f"🌸 <b>O'lcham:</b> {sizes_display}")
+            else:
+                if sizes and sizes != ["Standart"]:
+                    quote_lines.append(f"🌸 <b>O'lcham:</b> {sizes_display}")
+                else:
+                    quote_lines.append(f"🌸 <b>O'lcham:</b> Standart")
+        else:
+            quote_lines.append(f"🐾 <b>Razmer:</b> {sizes_display}")
 
         if colors and len(colors) > 0:
-            colors_display = ", ".join(colors)
-            lines.append(f"🎨 Ranglar: {colors_display}")
+            clean_colors = [strip_private_pricing_data(re.sub(r"\s+", " ", c)).strip() for c in colors if c and c.strip()]
+            clean_colors = [c for c in clean_colors if c]
+            if clean_colors:
+                colors_display = ", ".join(clean_colors)
+                colors_display = re.sub(r"\s+,", ",", colors_display)
+                quote_lines.append(f"🎨 <b>Ranglar:</b> {colors_display}")
 
         if cargo_rate_avia is not None and cargo_rate_avto is not None:
-            # Dual AVIA + AVTO breakdown
-            lines.append(
-                f"🌸 Kargo (har 100g uchun alohida):\n"
-                f"  ✈️ AVIA: {format_price(cargo_rate_avia)} / 100g ({delivery_days_avia})\n"
-                f"  🚗 AVTO: {format_price(cargo_rate_avto)} / 100g ({delivery_days_avto})"
-            )
+            avia_str = f"{int(cargo_rate_avia):,}".replace(",", ".")
+            avto_str = f"{int(cargo_rate_avto):,}".replace(",", ".")
+            quote_lines.append(f"🌸 <b>Kargo (100g):</b> AVIA {avia_str} | AVTO {avto_str}")
+            quote_lines.append(f"🚛 <b>Yetkazib berish:</b> {delivery_days_avia} (AVIA) / {delivery_days_avto} (AVTO)")
         else:
             cargo_suffix = " (alohida)" if cargo_separate else ""
-            lines.append(f"🌸 Kargo: {format_price(cargo_rate)} / 100g{cargo_suffix}")
+            quote_lines.append(f"🌸 <b>Kargo:</b> 100gr – {format_price(cargo_rate)}{cargo_suffix}")
             formatted_delivery = delivery_days if "ichida" in delivery_days or "kun" in delivery_days else f"{delivery_days} ichida"
-            lines.append(f"⏳ Yetkazib berish: {formatted_delivery}")
+            quote_lines.append(f"🚛 <b>Yetkazib berish:</b> {formatted_delivery}")
 
-        rev_handle = reviews_channel.lstrip("@") if reviews_channel else "moonlight_shop_otzv"
-        lines.append(f"✔️ Otzivlar: @{rev_handle}")
-        delivery_str = f"{delivery_days_avia} (AVIA) / {delivery_days_avto} (AVTO)" if (cargo_rate_avia and cargo_rate_avto) else delivery_days
-        lines.append(f"🚚 Yetkazib berish: {delivery_str}")
-        lines.append(f"\nAdmin: {contact_display} 🍩")
-        return "\n".join(lines)
+        quote_lines.append(f"✔️ <b>Отзывы:</b> @{rev_handle}")
+
+        inner_quote = "\n".join(quote_lines)
+        footer = f"Admin: {contact_display} 🍩"
+        if webapp_url:
+            footer += f"\n🛍️ <a href=\"{webapp_url}\"><b>Do'konda xarid qilish</b></a>"
+        return f"{tag_line}\n\n<blockquote>{inner_quote}</blockquote>\n\n{footer}"
 
     # Standard / legacy format
     lines = [
@@ -464,19 +629,34 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
         and not re.search(r"(?:kargo|cargo|доставка)\s*:", l, re.IGNORECASE)
     ]
 
-    # Try explicit price label on non-old price lines first
+    # Check for explicit supplier / original / cost price label first
     for line in content_lines_no_old:
-        match_price = re.search(
-            r"(?:yangi\s*narx(?:i)?|aksiya\s*narx(?:i)?|chegirma\s*narx(?:i)?|💰\s*narxi?|💰|narxi?|narx|цена|price|qiymat(?:i)?)\s*[:\-]?\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)\s*(k|ming)?\s*(?:so['’`]?m|som|сум)?",
+        match_supplier = re.search(
+            r"(?:asl\s*narx(?:i)?|ta['’`]?minotchi\s*narx(?:i)?|tan\s*narx(?:i)?|tannarx(?:i)?|optom\s*narx(?:i)?|ulgurji\s*narx(?:i)?)\s*[:\-]?\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)\s*(k|ming)?\s*(?:so['’`]?m|som|сум)?",
             line,
             re.IGNORECASE,
         )
-        if match_price:
-            token = match_price.group(1) + (match_price.group(2) or "")
+        if match_supplier:
+            token = match_supplier.group(1) + (match_supplier.group(2) or "")
             val = _parse_price_token(token)
             if val >= 1000:
                 source_price = val
                 break
+
+    # Try explicit retail price label on non-old price lines
+    if not source_price:
+        for line in content_lines_no_old:
+            match_price = re.search(
+                r"(?:yangi\s*narx(?:i)?|aksiya\s*narx(?:i)?|chegirma\s*narx(?:i)?|💰\s*narxi?|💰|narxi?|narx|цена|price|qiymat(?:i)?)\s*[:\-]?\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)\s*(k|ming)?\s*(?:so['’`]?m|som|сум)?",
+                line,
+                re.IGNORECASE,
+            )
+            if match_price:
+                token = match_price.group(1) + (match_price.group(2) or "")
+                val = _parse_price_token(token)
+                if val >= 1000:
+                    source_price = val
+                    break
 
     # If not found via explicit label, search lines for currency standalone
     if not source_price:
@@ -539,25 +719,41 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
         except ValueError:
             pass
 
-    # 8. Extract clean title
+    # 8. Extract clean title (never leak supplier price or profit margin)
     for idx, line in enumerate(lines):
         if line.startswith("#"):
             cleaned = re.sub(r"^#[a-zA-Z0-9_\u0400-\u04FF]+\s*", "", line).strip()
             # Remove decorative symbols
             cleaned = re.sub(r"^[\s✨🌸🎀]+", "", cleaned).strip()
             cleaned = re.sub(r"[\s✨🌸🎀]+$", "", cleaned).strip()
+            cleaned = strip_private_pricing_data(cleaned)
             if cleaned:
-                result["title"] = cleaned
+                result["title"] = cleaned[0].upper() + cleaned[1:] if len(cleaned) > 1 else cleaned.upper()
                 break
             # Check next line if first line only had hashtag
             if idx + 1 < len(lines):
                 next_line = lines[idx + 1]
-                if not re.search(r"^(?:💰|Narx|Razmer|Kargo|Yetkazib|Otziv|Admin|📦|👗|⏳|🌸|💌|Eski)", next_line, re.IGNORECASE):
+                if not re.search(r"^(?:💰|Narx|Razmer|Kargo|Yetkazib|Otziv|Admin|📦|👗|⏳|🌸|💌|Eski|Asl|Ta['’`]?minotchi|Tan\s*nar[xh]|Tannar[xh]|Optom|Ulgurji|Foyda|Marja|Ustama|Прибыль|Маржа|Наценка|Себестоимость|Закупка|\+|[¥￥$€]|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))", next_line, re.IGNORECASE):
                     c_next = re.sub(r"^[\s✨🌸🎀]+", "", next_line).strip()
                     c_next = re.sub(r"[\s✨🌸🎀]+$", "", c_next).strip()
-                    if c_next:
-                        result["title"] = c_next
+                    c_next = strip_private_pricing_data(c_next)
+                    if c_next and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_next, re.IGNORECASE):
+                        result["title"] = c_next[0].upper() + c_next[1:] if len(c_next) > 1 else c_next.upper()
                         break
+
+    if not result.get("title"):
+        for line in lines:
+            if not line.startswith("#") and not re.search(r"^(?:💰|Narx|Razmer|O'lcham|Kargo|Yetkazib|Otziv|Admin|📦|👗|⏳|🌸|💌|Eski|Old|Asl|Ta['’`]?minotchi|Tan\s*nar[xh]|Tannar[xh]|Optom|Ulgurji|Foyda|Marja|Ustama|Прибыль|Маржа|Наценка|Себестоимость|Закупка|\+|[¥￥$€]|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))", line, re.IGNORECASE):
+                c_line = re.sub(r"^[\s✨🌸🎀#]+", "", line).strip()
+                c_line = re.sub(r"[\s✨🌸🎀]+$", "", c_line).strip()
+                c_line = strip_private_pricing_data(c_line)
+                if c_line and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_line, re.IGNORECASE):
+                    result["title"] = c_line[0].upper() + c_line[1:] if len(c_line) > 1 else c_line.upper()
+                    break
+
+    if not result.get("title"):
+        cat_disp = result.get("category") or "kiyim"
+        result["title"] = f"{cat_disp.capitalize()} 🌸"
 
     return result
 

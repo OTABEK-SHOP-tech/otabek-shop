@@ -12,7 +12,7 @@ from aiogram.types import (
 from sqlalchemy import select, or_
 
 from api.config import settings
-from api.services.formatters import format_price, calculate_cargo
+from api.services.formatters import format_price, calculate_cargo, strip_private_pricing_data
 from bot.loader import bot
 from db.models import Product
 from db.session import async_session_factory
@@ -49,10 +49,12 @@ async def handle_inline_search(inline_query: InlineQuery):
     # Feature #2: "Lookni Tanlashda Yordam Ber" (Dilemma Poll Inline Card)
     if len(products) >= 2 and (not clean_search or clean_search in ["dilemma", "look", "solishtir", "tanlov"]):
         p1, p2 = products[0], products[1]
+        p1_title = strip_private_pricing_data(p1.title) or p1.title
+        p2_title = strip_private_pricing_data(p2.title) or p2.title
         dilemma_caption = (
             "🤔 <b>Qizlar, qaysi birini olay? Yordam bering! ✨</b>\n\n"
-            f"1️⃣ <b>{escape(p1.title)}</b> — {format_price(p1.price)}\n"
-            f"2️⃣ <b>{escape(p2.title)}</b> — {format_price(p2.price)}\n\n"
+            f"1️⃣ <b>{escape(p1_title)}</b> — {format_price(p1.price)}\n"
+            f"2️⃣ <b>{escape(p2_title)}</b> — {format_price(p2.price)}\n\n"
             "<i>Pastdagi tugmalar orqali ovoz bering va eng chiroylisini aniqlaylik:</i>"
         )
         dilemma_markup = InlineKeyboardMarkup(
@@ -79,7 +81,7 @@ async def handle_inline_search(inline_query: InlineQuery):
             InlineQueryResultArticle(
                 id="dilemma_poll_card",
                 title="🤔 Dilemma: Qaysi lookni tanlay? (Guruhda so'rovnoma)",
-                description=f"1: {p1.title[:20]} VS 2: {p2.title[:20]} — Do'stlaringiz bilan ovoz bering!",
+                description=f"1: {p1_title[:20]} VS 2: {p2_title[:20]} — Do'stlaringiz bilan ovoz bering!",
                 input_message_content=InputTextMessageContent(
                     message_text=dilemma_caption,
                     parse_mode="HTML"
@@ -90,8 +92,10 @@ async def handle_inline_search(inline_query: InlineQuery):
 
     for prod in products:
         cargo = calculate_cargo(prod.weight_grams)
+        clean_prod_title = strip_private_pricing_data(prod.title) or prod.title
+        clean_prod_desc = strip_private_pricing_data(prod.description or "")
         caption = (
-            f"🌙 <b>{escape(prod.title)}</b>\n"
+            f"🌙 <b>{escape(clean_prod_title)}</b>\n"
             f"💰 Narxi: <b>{format_price(prod.price)}</b>\n"
             f"📦 Kargo: ~{format_price(cargo)}\n\n"
             f"💌 Buyurtma berish uchun do'konga kiring"
@@ -111,8 +115,8 @@ async def handle_inline_search(inline_query: InlineQuery):
         results.append(
             InlineQueryResultArticle(
                 id=str(prod.id),
-                title=f"{prod.title} — {format_price(prod.price)}",
-                description=f"#{prod.category} | {prod.description[:60] if prod.description else 'Moonlight Chinese Shop'}",
+                title=f"{clean_prod_title} — {format_price(prod.price)}",
+                description=f"#{prod.category} | {clean_prod_desc[:60] if clean_prod_desc else 'Moonlight Chinese Shop'}",
                 input_message_content=InputTextMessageContent(
                     message_text=caption,
                     parse_mode="HTML",

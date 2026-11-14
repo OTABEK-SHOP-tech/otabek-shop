@@ -648,4 +648,30 @@ async def test_customer_receipt_passes_through_admin_router_e2e(test_db_session)
         assert order.receipt_photo_id == "receipt_photo_e2e"
 
 
+@pytest.mark.asyncio
+async def test_handle_receipt_upload_ignores_group_chats(test_db_session):
+    """
+    Verifies that handle_receipt_upload strictly ignores photos uploaded in group/supergroup/channel
+    chats (such as discussion group mirrored channel posts) and never answers or mutates orders.
+    """
+    from bot.handlers.orders import handle_receipt_upload
+    from aiogram.fsm.context import FSMContext
+
+    mock_state = AsyncMock(spec=FSMContext)
+    mock_state.get_state.return_value = None
+
+    for chat_type in ("group", "supergroup", "channel"):
+        msg = MagicMock()
+        msg.chat = MagicMock()
+        msg.chat.type = chat_type
+        msg.from_user = MagicMock(id=12345)
+        msg.photo = [MagicMock(file_id="group_photo")]
+        msg.document = None
+        msg.answer = AsyncMock()
+
+        await handle_receipt_upload(msg, mock_state)
+        assert msg.answer.call_count == 0
+
+
+
 

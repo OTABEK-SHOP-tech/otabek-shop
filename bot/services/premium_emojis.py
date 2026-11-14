@@ -12,9 +12,15 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 logger = logging.getLogger(__name__)
 
 # Verified Telegram Premium Custom Emojis (Bot API 7.0+)
-# Tested and confirmed live on Telegram Bot API with bot @moonlight_chinese_bot
-TG_MOON = '<tg-emoji emoji-id="5429099589997184246">🌙</tg-emoji>'
-TG_SAKURA = '<tg-emoji emoji-id="5440354006335495210">🌸</tg-emoji>'
+# Matched to Moonlight Chinese Shop channel pinned pack
+TG_MOON = '<tg-emoji emoji-id="5413349854728439167">🌙</tg-emoji>'
+TG_SPARKLE = '<tg-emoji emoji-id="5451636889717062286">✨</tg-emoji>'
+TG_SAKURA = '<tg-emoji emoji-id="5201873494798776013">🌸</tg-emoji>'
+TG_RIBBON = '<tg-emoji emoji-id="5393398928479646839">🎀</tg-emoji>'
+TG_CHECK = '<tg-emoji emoji-id="5429501538806548545">✅</tg-emoji>'
+TG_CHECK_BOX = '<tg-emoji emoji-id="5429501538806548545">✔️</tg-emoji>'
+TG_BAGS = '<tg-emoji emoji-id="5203996991054432397">🛍️</tg-emoji>'
+TG_TICKET = '<tg-emoji emoji-id="5377660214096974712">🎟️</tg-emoji>'
 TG_PARTY = '<tg-emoji emoji-id="5436040291507247633">🎉</tg-emoji>'
 TG_PIN = '<tg-emoji emoji-id="5429270061544130296">📍</tg-emoji>'
 TG_USER = '<tg-emoji emoji-id="5373012449597335010">👤</tg-emoji>'
@@ -23,28 +29,22 @@ TG_STAR = '<tg-emoji emoji-id="5458799228719472718">🌟</tg-emoji>'
 TG_MONEY = '<tg-emoji emoji-id="5375296873982604963">💰</tg-emoji>'
 TG_CARGO = '<tg-emoji emoji-id="5199749070830197566">🎁</tg-emoji>'
 TG_TIME = '<tg-emoji emoji-id="5451732530048802485">⏳</tg-emoji>'
-TG_SPARKLE = '<tg-emoji emoji-id="5472164874886846699">✨</tg-emoji>'
 TG_FIRE = '<tg-emoji emoji-id="5420315771991497307">🔥</tg-emoji>'
 TG_DIAMOND = '<tg-emoji emoji-id="5471952986970267163">💎</tg-emoji>'
 TG_CROWN = '<tg-emoji emoji-id="5467406098367521267">👑</tg-emoji>'
-TG_RIBBON = '<tg-emoji emoji-id="5375152498656961898">🎀</tg-emoji>'
 TG_CART = '<tg-emoji emoji-id="5431499171045581032">🛒</tg-emoji>'
-TG_BAGS = '<tg-emoji emoji-id="5373052667671093676">🛍️</tg-emoji>'
 TG_PLANE = '<tg-emoji emoji-id="5361600266225326825">✈️</tg-emoji>'
 TG_AUTO = '<tg-emoji emoji-id="5445085952194124000">🚗</tg-emoji>'
 TG_LETTER = '<tg-emoji emoji-id="5472019095106886003">💌</tg-emoji>'
 TG_HEART = '<tg-emoji emoji-id="5434031913260035048">🩷</tg-emoji>'
-TG_CHECK = '<tg-emoji emoji-id="5427009714745517609">✅</tg-emoji>'
-TG_CHECK_BOX = '<tg-emoji emoji-id="5188216731453103384">✔️</tg-emoji>'
-TG_TICKET = '<tg-emoji emoji-id="5377599075237502153">🎟️</tg-emoji>'
 TG_PAW = '<tg-emoji emoji-id="5188308218551475917">🐾</tg-emoji>'
 TG_BANK = '<tg-emoji emoji-id="5264895611517300926">🏦</tg-emoji>'
 TG_DONUT = '<tg-emoji emoji-id="5429604721100866255">🍩</tg-emoji>'
 TG_STRAWBERRY = '<tg-emoji emoji-id="5429261128012154710">🍓</tg-emoji>'
 
 # Premium Button Icon IDs
-PREMIUM_BTN_BAG_ID = "5373052667671093676"  # Shopping bags from RestrictedEmoji
-PREMIUM_BTN_STAR_ID = "5458799228719472718"  # Glowing star from RestrictedEmoji
+PREMIUM_BTN_BAG_ID = "5203996991054432397"  # Shopping bags from channel verified pack
+PREMIUM_BTN_STAR_ID = "5451636889717062286"  # Sparkle from channel verified pack
 
 # Emoji substitution dictionary for automatic upgrading of any bot post
 EMOJI_TO_PREMIUM = {
@@ -93,7 +93,14 @@ EMOJI_TO_PREMIUM = {
     "🍓": TG_STRAWBERRY,
     "📋": TG_PIN,
     "📸": TG_SPARKLE,
+    "🚛": TG_AUTO,
+    "🏷️": TG_PIN,
+    "🏷": TG_PIN,
 }
+
+_EMOJI_REGEX = re.compile(
+    "|".join(re.escape(k) for k in sorted(EMOJI_TO_PREMIUM.keys(), key=lambda x: -len(x)))
+)
 
 
 def upgrade_to_premium_emojis(text: str) -> str:
@@ -101,12 +108,13 @@ def upgrade_to_premium_emojis(text: str) -> str:
     Scans any message text and upgrades standard emojis to verified
     Telegram Premium animated custom emojis.
     Preserves text already wrapped in <tg-emoji>.
+    Uses a single-pass regex replacement to ensure tags are NEVER nested.
     """
     if not text:
         return text
 
     # Split text into segments: parts inside <tg-emoji>...</tg-emoji> remain untouched,
-    # parts outside are transformed.
+    # parts outside are transformed in a single pass without re-scanning replacements.
     pattern = r'(<tg-emoji[^>]*>.*?</tg-emoji>)'
     tokens = re.split(pattern, text)
 
@@ -115,12 +123,15 @@ def upgrade_to_premium_emojis(text: str) -> str:
         if token.startswith("<tg-emoji"):
             transformed_tokens.append(token)
         else:
-            cur = token
-            for char, premium_tag in sorted(EMOJI_TO_PREMIUM.items(), key=lambda x: -len(x[0])):
-                cur = cur.replace(char, premium_tag)
-            transformed_tokens.append(cur)
+            transformed_tokens.append(_EMOJI_REGEX.sub(lambda m: EMOJI_TO_PREMIUM[m.group(0)], token))
 
-    return "".join(transformed_tokens)
+    result = "".join(transformed_tokens)
+    # Defense in depth: collapse any nested <tg-emoji> tags if somehow present
+    nested_pattern = re.compile(r'<tg-emoji\s+emoji-id="([^"]+)">([^<]*?)<tg-emoji[^>]*>([^<]*?)</tg-emoji>([^<]*?)</tg-emoji>')
+    while nested_pattern.search(result):
+        result = nested_pattern.sub(r'<tg-emoji emoji-id="\1">\2\3\4</tg-emoji>', result)
+
+    return result
 
 
 def strip_custom_emojis(text: str) -> str:

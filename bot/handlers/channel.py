@@ -18,6 +18,7 @@ from db.models import Admin, Setting
 from db.session import async_session_factory
 
 router = Router(name="channel")
+router.message.filter(F.chat.type == "private")
 logger = logging.getLogger(__name__)
 
 CHANNEL_REF_RE = re.compile(r"(?:https?://)?(?:t\.me/|@)?([A-Za-z0-9_]{5,32})/?")

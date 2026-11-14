@@ -55,9 +55,12 @@ def make_webapp_inline_btn(text: str, url: str) -> InlineKeyboardButton:
             icon_custom_emoji_id="5373052667671093676",
             style="primary",
         )
+    # When no HTTPS web app URL is available (e.g. localhost or not configured),
+    # fallback to a clean HTTPS Telegram channel/bot link rather than an invalid HTTP URL
+    fallback_url = "https://t.me/moonlight_chinese_shop"
     return InlineKeyboardButton(
         text=clean_text or text,
-        url=url or "http://localhost:8001",
+        url=fallback_url,
         icon_custom_emoji_id="5373052667671093676",
         style="primary",
     )
@@ -67,32 +70,32 @@ def get_admin_main_keyboard() -> InlineKeyboardMarkup:
     """
     Main menu inline keyboard for /admin command.
     """
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🎁 Konkurs boshqaruvi", callback_data="admin_contest_menu"),
-                InlineKeyboardButton(text="➕ Yangi mahsulot", callback_data="admin_add_product"),
-            ],
-            [
-                InlineKeyboardButton(text="📦 Mahsulotlar", callback_data="admin_list_products"),
-                InlineKeyboardButton(text="🗂 Kategoriyalar", callback_data="admin_categories"),
-            ],
-            [
-                InlineKeyboardButton(text="⭐ Fikrlar", callback_data="admin_reviews"),
-                InlineKeyboardButton(text="🧾 Buyurtmalar", callback_data="admin_orders"),
-            ],
-            [
-                InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"),
-                InlineKeyboardButton(text="📣 Xabar yuborish (broadcast)", callback_data="admin_broadcast"),
-            ],
-            [
-                InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="admin_settings"),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👑 Mini App Admin Panel",
-                    web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=admin"),
-                )
-            ]
-        ]
-    )
+    keyboard = [
+        [
+            InlineKeyboardButton(text="🎁 Konkurs boshqaruvi", callback_data="admin_contest_menu"),
+            InlineKeyboardButton(text="➕ Yangi mahsulot", callback_data="admin_add_product"),
+        ],
+        [
+            InlineKeyboardButton(text="📦 Mahsulotlar", callback_data="admin_list_products"),
+            InlineKeyboardButton(text="🗂 Kategoriyalar", callback_data="admin_categories"),
+        ],
+        [
+            InlineKeyboardButton(text="⭐ Fikrlar", callback_data="admin_reviews"),
+            InlineKeyboardButton(text="🧾 Buyurtmalar", callback_data="admin_orders"),
+        ],
+        [
+            InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"),
+            InlineKeyboardButton(text="📣 Xabar yuborish (broadcast)", callback_data="admin_broadcast"),
+        ],
+        [
+            InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="admin_settings"),
+        ],
+    ]
+    if settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"):
+        keyboard.append([
+            InlineKeyboardButton(
+                text="👑 Mini App Admin Panel",
+                web_app=WebAppInfo(url=f"{settings.WEBAPP_URL}?tab=admin"),
+            )
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

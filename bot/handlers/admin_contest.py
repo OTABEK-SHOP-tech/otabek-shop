@@ -33,6 +33,7 @@ from bot.services.contest_service import (
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin_contest")
+router.message.filter(F.chat.type == "private")
 
 
 # FSM States
