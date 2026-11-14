@@ -250,7 +250,7 @@ async def handle_boost_command(message: Message, state: Optional[FSMContext] = N
 
     # 4. Show boost status and prompt admin to send a photo
     has_gemini = bool(getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY"))
-    model_name = getattr(settings, "GEMINI_VISION_MODEL", "gemini-2.0-flash")
+    model_name = getattr(settings, "GEMINI_VISION_MODEL", "gemini-3.1-flash-lite")
     yuan_rate = getattr(settings, "YUAN_TO_UZS_RATE", 1800)
 
     if has_gemini:
