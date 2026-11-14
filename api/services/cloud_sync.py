@@ -82,7 +82,7 @@ async def sync_product_to_cloud(product: Product) -> bool:
                 "photos": product.photos or [],
                 "sizes": product.sizes or ["Standart"],
                 "colors": product.colors or ["Rasmda ko'rsatilgan"],
-                "weight_grams": product.weight_grams or 250,
+                "weight_grams": product.weight_grams,
                 "in_stock": product.in_stock,
                 "is_new": product.is_new,
                 "is_hit": product.is_hit,

@@ -584,18 +584,22 @@ def normalize_color(color_name: str) -> str:
     if not clean:
         return ""
 
-    # If it already has an emoji, normalize whitespace and return
-    if any(c in clean for c in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐"):
-        return re.sub(r"\s+", " ", clean).strip()
-
-    # Strip bracketed modifiers like 【加绒】, (单件), (春款), [套装], etc.
+    # Strip bracketed modifiers like (Ichki qismi paxtali), 【加绒】, 【加棉】, (单件), (春款), [套装], etc.
     clean = re.sub(r"[（(【\[][^）)】\]]*[）)】\]]", "", clean).strip()
     # Strip common package/garment suffixes in Chinese (e.g. 黑色单件 -> 黑色)
-    clean = re.sub(r"(?:单件|套装|加绒|薄款|两件套)$", "", clean).strip()
+    clean = re.sub(r"(?:单件|套装|加绒|加棉|加厚|薄款|两件套|常规)$", "", clean).strip()
+    clean = re.sub(r"\s+", " ", clean).strip()
     if not clean:
         return ""
 
+    # If it already has an emoji, check if base word matches dictionary
     lower = clean.lower()
+    for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐":
+        if em in clean:
+            base_word = clean.replace(em, "").strip().lower()
+            if base_word in COLOR_MAP:
+                return COLOR_MAP[base_word]
+            return clean
 
     # Exact dictionary match
     if lower in COLOR_MAP:
@@ -1052,6 +1056,7 @@ async def extract_product_from_image(
         "Ignore Chinese weight annotations in parentheses (e.g., extract 'M' from 'M码 (建议90-105斤)').\n"
         "6. colors: Array of ONLY REAL, VERIFIABLE colors visible on this product or explicitly listed in the specification text/selection options. "
         "CRITICAL: NEVER INVENT, ASSUME, OR HALLUCINATE COLORS (such as green, pink, blue, etc.) that do not exist on the product! If the product only has black and brown/coffee variants, output ONLY those. "
+        "DO NOT include lining, padding, or season modifiers like '(Ichki qismi paxtali)', 'paxtali', '加绒', '加棉', 'fleece', 'thin', 'thick' in colors! If options say 'Black regular' and 'Black fleece', the color is simply 'Qora 🖤'. "
         "Translate each color into clean aesthetic Uzbek Latin names with a matching emoji (e.g. 'Qora 🖤', 'Jigarrang 🤎', 'Qahva rangi ☕', 'Oq 🤍').\n"
         "7. cargo_rate: Optional cargo rate per 100g in UZS if explicitly shown on the screenshot, otherwise null.\n"
         "8. weight_grams: Optional item weight in grams if shown on the screenshot, otherwise null.\n"
