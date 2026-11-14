@@ -308,6 +308,9 @@ COLOR_MAP = {
     "jigar rang": "Jigarrang 🤎",
     "kofe": "Jigarrang 🤎",
     "kofe rang": "Jigarrang 🤎",
+    "qahva": "Qahva rangi ☕",
+    "qahva rangi": "Qahva rangi ☕",
+    "qahvarang": "Qahva rangi ☕",
     "krem": "Krem rang 🍦",
     "krem rang": "Krem rang 🍦",
     "sabzirang": "Sabzirang 🧡",
@@ -582,8 +585,8 @@ def normalize_color(color_name: str) -> str:
         return ""
 
     # If it already has an emoji, normalize whitespace and return
-    if any(c in clean for c in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒"):
-        return clean
+    if any(c in clean for c in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐"):
+        return re.sub(r"\s+", " ", clean).strip()
 
     # Strip bracketed modifiers like 【加绒】, (单件), (春款), [套装], etc.
     clean = re.sub(r"[（(【\[][^）)】\]]*[）)】\]]", "", clean).strip()
@@ -1047,9 +1050,9 @@ async def extract_product_from_image(
         "or ['Standart'] if '均码', '一码', 'Free size', 'One size', or 'Стандарт'). "
         "For non-clothing (bags, cosmetics, accessories, watches, decor), default sizes to ['Standart']. "
         "Ignore Chinese weight annotations in parentheses (e.g., extract 'M' from 'M码 (建议90-105斤)').\n"
-        "6. colors: Array of product colors translated into aesthetic Uzbek names with emojis "
-        "(e.g. ['Pushti 🌸', 'Oq 🤍', 'Qora 🖤', 'Havorang 🩵', 'Bej 🤎', 'Yashil 💚', 'Qizil ❤️', "
-        "'Sariq 💛', 'Binafsha 💜', 'Kulrang 🩶', 'Jigarrang 🤎', 'Krem rang 🍦']).\n"
+        "6. colors: Array of ONLY REAL, VERIFIABLE colors visible on this product or explicitly listed in the specification text/selection options. "
+        "CRITICAL: NEVER INVENT, ASSUME, OR HALLUCINATE COLORS (such as green, pink, blue, etc.) that do not exist on the product! If the product only has black and brown/coffee variants, output ONLY those. "
+        "Translate each color into clean aesthetic Uzbek Latin names with a matching emoji (e.g. 'Qora 🖤', 'Jigarrang 🤎', 'Qahva rangi ☕', 'Oq 🤍').\n"
         "7. cargo_rate: Optional cargo rate per 100g in UZS if explicitly shown on the screenshot, otherwise null.\n"
         "8. weight_grams: Optional item weight in grams if shown on the screenshot, otherwise null.\n"
         "9. is_spec_screenshot: Boolean (true if this image is a mobile app screenshot e.g. Pinduoduo/1688/Taobao checkout screen, spec selection modal, size table, shopping cart, or price summary with UI buttons and specs; false if this image is a clean clothing model photo or product photography).\n\n"
