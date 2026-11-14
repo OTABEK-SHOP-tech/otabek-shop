@@ -67,57 +67,7 @@ async def seed_database() -> None:
             await session.commit()
 
         # 3. Products
-        res_prod = await session.execute(select(Product))
-        if res_prod.scalars().first() is None:
-            demo_products = [
-                Product(
-                    title="Aesthetic Vintage Pushti Jempir 🌸",
-                    description="Yumshoq, qulay va iliq pushti jempir. Aesthetic koreys va xitoy uslubidagi qizlar uchun ajoyib tanlov! Qalin to'qilgan, qishki va kuzgi ob-havo uchun mos. 🎀",
-                    price=99000,
-                    old_price=135000,
-                    category="jempir",
-                    photos=["demo_jempir_1.png", "demo_jempir_2.png"],
-                    sizes=["S", "M", "L"],
-                    colors=["Aesthetic pushti 🌸", "Sutli oq 🤍", "Krem 🍦"],
-                    weight_grams=350,
-                    in_stock=True,
-                    is_new=True,
-                    is_hit=True,
-                    views=128,
-                ),
-                Product(
-                    title="Pastel Pushti Lolita Parik (Wig) 💇‍♀️",
-                    description="Yuqori sifatli termotola, tabiiy jilo va yumshoq jingalaklar. Cosplay va kundalik aesthetic obrazlar uchun mukammal! Oson taraladi va shaklini saqlaydi. ✨",
-                    price=125000,
-                    old_price=160000,
-                    category="wig",
-                    photos=["demo_wig_1.png", "demo_wig_2.png"],
-                    sizes=["Universal"],
-                    colors=["Pastel pushti 🌸", "Och binafsha 💜"],
-                    weight_grams=250,
-                    in_stock=True,
-                    is_new=True,
-                    is_hit=False,
-                    views=89,
-                ),
-                Product(
-                    title="Iliq Yulduzli Shoyi Sharf 🧣",
-                    description="Yumshoq jun va ipak aralashmasidan tayyorlangan zamonaviy sharf. Sovuq kunlarda issiq saqlaydi va har qanday kiyimga noziklik bag'ishlaydi. 💗",
-                    price=45000,
-                    old_price=60000,
-                    category="scarf",
-                    photos=["demo_scarf_1.png", "demo_scarf_2.png"],
-                    sizes=["200x50 sm"],
-                    colors=["Pushti-krem 🌸", "Kulrang-pushti 🎀"],
-                    weight_grams=180,
-                    in_stock=True,
-                    is_new=False,
-                    is_hit=True,
-                    views=215,
-                ),
-            ]
-            session.add_all(demo_products)
-            await session.commit()
+        # No fake/demo products are auto-seeded. Products are uploaded genuinely by store owners.
 
         # 4. Reviews
         res_rev = await session.execute(select(Review))
