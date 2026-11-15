@@ -57,21 +57,23 @@ async def send_payment_instructions(
         card_setting = res_card.scalars().first()
         payment_card_text = card_setting.value if card_setting and card_setting.value else "9860 3501 4255 8658 (Humo, Ma'rufjonova Gulmira)"
 
+    clean_name = (customer_name or "Mijoz").strip().rstrip(".! ")
+
     # Format card with 1-tap copyable card number and clear bank/recipient details
     if "(" in payment_card_text:
         card_number_part = payment_card_text.split("(", 1)[0].strip()
         card_info_part = payment_card_text.split("(", 1)[1].rstrip(")").strip()
-        card_display = f"<code>{escape(card_number_part)}</code>\n🏦 <i>{escape(card_info_part)}</i>"
+        card_display = f"💳 <b>Karta:</b> <code>{escape(card_number_part)}</code> ({escape(card_info_part)})"
     else:
-        card_display = f"<code>{escape(payment_card_text)}</code>"
+        card_display = f"💳 <b>Karta:</b> <code>{escape(payment_card_text)}</code>"
 
-    cargo_text = "📦 <b>Kargo (100g):</b> AVTO 10.000 | AVIA 14.000 so'm (Toshkentda alohida to'lanadi)\n"
+    cargo_text = "📦 <b>Kargo (100g):</b> AVTO 10.000 | AVIA 14.000 so'm (Kargo uchun alohida to'lov qilinadi)\n"
 
     items_block = ""
     if items:
         item_lines = []
         for idx, item in enumerate(items[:5], 1):
-            t = item.get("title", "Mahsulot")
+            t = item.get("title") or item.get("product_title", "Mahsulot")
             q = item.get("qty", 1)
             p = item.get("price", 0)
             size = item.get("size")
@@ -82,24 +84,20 @@ async def send_payment_instructions(
             if color:
                 attrs.append(f"Rang: {color}")
             attr_str = f" ({', '.join(attrs)})" if attrs else ""
-            item_lines.append(f"  {idx}. {escape(str(t))}{escape(attr_str)} — {q} x {format_price(p)}")
+            item_lines.append(f"{idx}. {escape(str(t))}{escape(attr_str)} — {q} x {format_price(p)}")
         if len(items) > 5:
-            item_lines.append(f"  ... va yana {len(items) - 5} ta mahsulot")
-        items_block = f"📋 <b>Tanlangan mahsulotlar:</b>\n" + "\n".join(item_lines) + "\n\n"
+            item_lines.append(f"... va yana {len(items) - 5} ta mahsulot")
+        items_block = f"🛍️ <b>Tanlangan mahsulotlar:</b>\n" + "\n".join(item_lines) + "\n\n"
 
     payment_msg = (
-        f"🌸 <b>Rahmat, {escape(customer_name or 'Mijoz')}!</b> 💗\n\n"
-        f"Buyurtmangiz <b>#{order_id}</b> rasmiylashtirildi.\n\n"
+        f"🌸 <b>Rahmat, {escape(clean_name)}!</b> 💗\n\n"
+        f"Buyurtmangiz <b>#{order_id}</b> rasmiylashtirildi ✨\n\n"
         f"{items_block}"
         f"💰 <b>To'lov summasi:</b> <b>{format_price(total)}</b>\n"
         f"{cargo_text}"
-        f"💳 <b>To'lov uchun karta (rekvizitlar):</b>\n"
         f"{card_display}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📸 <b>Iltimos, to'lov chekini (skrinshot yoki rasm shaklida) ushbu botga yuboring! "
-        f"Chekni yubormaguningizcha buyurtmangiz adminlarga yuborilmaydi.</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"<i>To'lov amalga oshirilgach, chek rasmini to'g'ridan-to'g'ri ushbu chatga yuboring</i> 💌"
+        f"📸 <i>To'lov chekini (skrinshot) ushbu botga yuboring. "
+        f"Chekni yubormaguningizcha buyurtmangiz adminlarga yuborilmaydi 💌</i>"
     )
 
     try:

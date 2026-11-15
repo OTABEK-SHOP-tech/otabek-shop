@@ -149,7 +149,7 @@ async def send_product_deep_link(message: Message, prod_id: int) -> bool:
             text = (
                 f"🌙 <b>{escape(str(clean_title))}</b>\n"
                 f"💰 <b>Narxi:</b> {format_price(product.price)}\n"
-                f"🌸 <b>Kargo (100g):</b> AVIA 14.000 | AVTO 10.000 (alohida to'lanadi)\n"
+                f"🌸 <b>Kargo (100g):</b> AVIA 14.000 | AVTO 10.000 (Kargo uchun alohida to'lov qilinadi)\n"
                 f"{desc_text}"
                 f"{stock_badge}\n\n"
                 f"{prompt_action}"

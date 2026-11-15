@@ -163,7 +163,7 @@ export const BagPage: React.FC<BagPageProps> = ({
       (completedOrder.cashback_used && completedOrder.cashback_used > 0
         ? `💰 Keshbek ishlatildi: -${formatPrice(completedOrder.cashback_used)}\n`
         : '') +
-      `📦 Kargo (100g): 10.000 / 14.000 so'm (Toshkentda alohida to'lanadi)\n` +
+      `📦 Kargo (100g): 10.000 / 14.000 so'm (Kargo uchun alohida to'lov qilinadi)\n` +
       `📍 Kargo bosqichi: ${completedOrder.formatted_cargo_stage || "Xitoy omborida"}`;
 
     const stages = [

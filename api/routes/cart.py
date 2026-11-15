@@ -55,7 +55,7 @@ async def get_user_cart_summary(user_id: int, db: AsyncSession) -> CartSummaryOu
             )
         )
 
-    # Cargo is calculated and paid separately in Tashkent upon arrival by actual measured weight.
+    # Cargo is calculated and paid separately upon arrival by actual measured weight.
     # It is NEVER added to the initial product order total.
     estimated_cargo = 0
     grand_total = subtotal
@@ -66,7 +66,7 @@ async def get_user_cart_summary(user_id: int, db: AsyncSession) -> CartSummaryOu
         subtotal=subtotal,
         formatted_subtotal=format_price(subtotal),
         estimated_cargo=0,
-        formatted_estimated_cargo="Alohida to'lanadi",
+        formatted_estimated_cargo="Kargo uchun alohida to'lov qilinadi",
         grand_total=grand_total,
         formatted_grand_total=format_price(grand_total),
     )
