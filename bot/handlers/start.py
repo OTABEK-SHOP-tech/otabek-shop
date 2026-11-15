@@ -141,7 +141,7 @@ async def send_product_deep_link(message: Message, prod_id: int) -> bool:
             is_https_webapp = bool(webapp_url and webapp_url.startswith("https://"))
 
             prompt_action = (
-                "🛍️ <b>Mahsulotni sotib olish uchun pastdagi tugmani bosing va do'kon (Mini App) ochiladi:</b>\n"
+                "🛍️ <b>Mahsulotni sotib olish uchun pastdagi tugmani bosing:</b>\n"
                 if is_https_webapp
                 else ""
             )
@@ -149,7 +149,7 @@ async def send_product_deep_link(message: Message, prod_id: int) -> bool:
             text = (
                 f"🌙 <b>{escape(str(clean_title))}</b>\n"
                 f"💰 <b>Narxi:</b> {format_price(product.price)}\n"
-                f"📦 <b>Kargo:</b> ~{format_price(cargo)}"
+                f"🌸 <b>Kargo (100g):</b> AVIA 14.000 | AVTO 10.000 (alohida to'lanadi)\n"
                 f"{desc_text}"
                 f"{stock_badge}\n\n"
                 f"{prompt_action}"

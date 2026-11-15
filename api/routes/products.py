@@ -35,7 +35,7 @@ def enrich_product_out(product: Product, cargo_rate: int = 12000, is_admin: bool
         formatted_old_price=format_price(product.old_price) if product.old_price else None,
         formatted_source_price=format_price(product.source_price) if (is_admin and getattr(product, "source_price", None)) else None,
         cargo_estimate=cargo,
-        formatted_cargo_estimate=format_price(cargo),
+        formatted_cargo_estimate=format_price(cargo) if cargo > 0 else "10.000 / 14.000 so'm (100g)",
     )
 
 

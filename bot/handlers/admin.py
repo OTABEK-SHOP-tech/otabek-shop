@@ -1077,6 +1077,13 @@ async def handle_importable_post(
                 elif raw_text_check not in buf["text"]:
                     buf["text"] = f"{buf['text']}\n{raw_text_check}".strip()
             buf["last_active"] = time.time()
+            if buf.get("status_msg") and len(buf["photos"]) > 1:
+                try:
+                    await buf["status_msg"].edit_text(
+                        f"🔄 <i>Rasmlar qabul qilinmoqda ({len(buf['photos'])} ta)...</i> 🌸"
+                    )
+                except Exception:
+                    pass
             return
 
         # First photo in this batch: synchronously register buffer BEFORE any async network calls
@@ -1089,17 +1096,20 @@ async def handle_importable_post(
         }
 
         # Guard buffer lifetime under try...finally from registration through debounce wait
+        status_msg: Optional[Message] = None
         try:
             # Send progress status without racing with subsequent incoming photos
             try:
-                status_msg = await message.answer("🔄 <i>Rasm(lar) tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸")
+                status_msg = await message.answer("🔄 <i>Rasm(lar) qabul qilinmoqda (1 ta)...</i> 🌸")
                 if batch_key in _media_group_buffer:
                     _media_group_buffer[batch_key]["status_msg"] = status_msg
             except Exception:
                 pass
 
-            # Adaptive debounce wait
+            # Adaptive debounce wait: generous window for mobile network uploads
             start_wait = time.time()
+            idle_target = 1.5 if mg_id else 2.5
+            max_wait = 15.0 if mg_id else 20.0
             while True:
                 await asyncio.sleep(0.3)
                 current_buf = _media_group_buffer.get(batch_key)
@@ -1107,8 +1117,17 @@ async def handle_importable_post(
                     return
                 idle = time.time() - current_buf["last_active"]
                 total = time.time() - start_wait
-                if idle >= 0.7 or total >= 5.0:
+                if idle >= idle_target or total >= max_wait:
                     break
+
+            if status_msg and batch_key in _media_group_buffer:
+                p_count = len(_media_group_buffer[batch_key]["photos"])
+                try:
+                    await status_msg.edit_text(
+                        f"🔄 <i>{p_count} ta rasm tahlil qilinmoqda va ma'lumotlar o'qilmoqda...</i> 🌸"
+                    )
+                except Exception:
+                    pass
         finally:
             buf = _media_group_buffer.pop(batch_key, None)
             if not mg_id and _user_active_batch.get(user_id) == batch_key:

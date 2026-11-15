@@ -230,7 +230,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             </span>
           )}
           <span className="ml-auto text-xs font-bold text-sakura-plum/70 dark:text-sakura-blush/70 bg-sakura-blush/60 dark:bg-sakura-darkcardsoft px-2.5 py-1 rounded-full">
-            📦 Kargo: 100g / {formatPrice(settings.cargo_rate_avto || 10000)} dan (Alohida to'lanadi)
+            📦 Kargo (100g): 10.000 / 14.000 so'm
           </span>
         </div>
 

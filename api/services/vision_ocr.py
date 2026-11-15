@@ -626,6 +626,8 @@ def deduplicate_colors(colors_list: List[str]) -> List[str]:
     - Strips whitespace around tokens and emojis.
     - Deduplicates identical colors case-insensitively.
     - Merges redundant permutation combos (e.g. 'Oq-Qora 🤍🖤' and 'Qora va Oq 🖤🤍').
+    - If individual constituent single colors exist (e.g. 'Qora 🖤' and 'Oq 🤍'),
+      drops redundant composite combos (e.g. 'Oq-Qora 🤍🖤') that merely repeat them.
     """
     if not colors_list:
         return []
@@ -650,7 +652,23 @@ def deduplicate_colors(colors_list: List[str]) -> List[str]:
             seen_sets.append(words)
         seen_exact.add(lower_exact)
         cleaned.append(c_clean)
-    return cleaned
+
+    # If constituent base words already exist individually (e.g. 'qora' and 'oq'),
+    # eliminate composite combo (e.g. 'oq-qora') to avoid repetitive labels
+    single_color_words = set()
+    for c in cleaned:
+        words = [w for w in re.findall(r"[a-zA-Z\u0400-\u04FF\u4e00-\u9fff]+", c.lower()) if w not in ("va", "bilan", "yoki", "rang", "rangi")]
+        if len(words) == 1:
+            single_color_words.add(words[0])
+
+    final_list: List[str] = []
+    for c in cleaned:
+        words = [w for w in re.findall(r"[a-zA-Z\u0400-\u04FF\u4e00-\u9fff]+", c.lower()) if w not in ("va", "bilan", "yoki", "rang", "rangi")]
+        if len(words) > 1 and len(words) <= len(single_color_words) and all(w in single_color_words for w in words):
+            continue
+        final_list.append(c)
+
+    return final_list
 
 
 def normalize_colors(colors_input: Union[str, List[str], None]) -> List[str]:
