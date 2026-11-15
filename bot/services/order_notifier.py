@@ -63,9 +63,12 @@ async def send_payment_instructions(
     if "(" in payment_card_text:
         card_number_part = payment_card_text.split("(", 1)[0].strip()
         card_info_part = payment_card_text.split("(", 1)[1].rstrip(")").strip()
-        card_display = f"💳 <b>Karta:</b> <code>{escape(card_number_part)}</code> ({escape(card_info_part)})"
+        card_display = f"💳 <b>Karta:</b> <code>{escape(card_number_part)}</code>\n🏦 <i>{escape(card_info_part)}</i>"
+    elif " - " in payment_card_text:
+        card_number_part, card_info_part = [p.strip() for p in payment_card_text.split(" - ", 1)]
+        card_display = f"💳 <b>Karta:</b> <code>{escape(card_number_part)}</code>\n🏦 <i>{escape(card_info_part)}</i>"
     else:
-        card_display = f"💳 <b>Karta:</b> <code>{escape(payment_card_text)}</code>"
+        card_display = f"💳 <b>Karta:</b> <code>{escape(payment_card_text.strip())}</code>"
 
     cargo_text = "📦 <b>Kargo (100g):</b> AVTO 10.000 | AVIA 14.000 so'm (Kargo uchun alohida to'lov qilinadi)\n"
 
@@ -90,7 +93,7 @@ async def send_payment_instructions(
         items_block = f"🛍️ <b>Tanlangan mahsulotlar:</b>\n" + "\n".join(item_lines) + "\n\n"
 
     payment_msg = (
-        f"🌸 <b>Rahmat, {escape(clean_name)}!</b> 💗\n\n"
+        f"🌸 <b>Rahmat, {escape(clean_name)}!</b> 💗\n"
         f"Buyurtmangiz <b>#{order_id}</b> rasmiylashtirildi ✨\n\n"
         f"{items_block}"
         f"💰 <b>To'lov summasi:</b> <b>{format_price(total)}</b>\n"

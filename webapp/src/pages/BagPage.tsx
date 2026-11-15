@@ -484,7 +484,7 @@ export const BagPage: React.FC<BagPageProps> = ({
         </div>
         <div className="flex justify-between text-xs py-1">
           <span className="text-sakura-plum/70 dark:text-sakura-blush/70">Kargo (100g):</span>
-          <span className="font-bold text-sakura-rose">10.000 / 14.000 so'm (Alohida)</span>
+          <span className="font-bold text-sakura-rose">10.000 / 14.000 so'm (Kargo uchun alohida to'lov)</span>
         </div>
         {useCashback && maxAllowedCashback > 0 && (
           <div className="flex justify-between text-xs py-1 text-emerald-600 dark:text-emerald-400 font-bold">
