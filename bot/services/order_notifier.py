@@ -65,7 +65,7 @@ async def send_payment_instructions(
     else:
         card_display = f"<code>{escape(payment_card_text)}</code>"
 
-    cargo_text = f"📦 <b>Taxminiy kargo:</b> {format_price(estimated_cargo)}\n" if estimated_cargo > 0 else ""
+    cargo_text = "📦 <b>Kargo to'lovi:</b> Alohida to'lanadi (mahsulot Toshkentga yetib kelgach, haqiqiy vazni bo'yicha)\n"
 
     items_block = ""
     if items:

@@ -55,16 +55,18 @@ async def get_user_cart_summary(user_id: int, db: AsyncSession) -> CartSummaryOu
             )
         )
 
-    estimated_cargo = calculate_cargo(total_weight, cargo_rate) if total_weight > 0 else 0
-    grand_total = subtotal + estimated_cargo
+    # Cargo is calculated and paid separately in Tashkent upon arrival by actual measured weight.
+    # It is NEVER added to the initial product order total.
+    estimated_cargo = 0
+    grand_total = subtotal
 
     return CartSummaryOut(
         items=items_out,
         total_items=total_qty,
         subtotal=subtotal,
         formatted_subtotal=format_price(subtotal),
-        estimated_cargo=estimated_cargo,
-        formatted_estimated_cargo=format_price(estimated_cargo),
+        estimated_cargo=0,
+        formatted_estimated_cargo="Alohida to'lanadi",
         grand_total=grand_total,
         formatted_grand_total=format_price(grand_total),
     )
