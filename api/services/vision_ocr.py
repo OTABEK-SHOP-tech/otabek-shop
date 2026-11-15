@@ -319,6 +319,54 @@ COLOR_MAP = {
     "oltinrang": "Oltinrang 💛",
     "kumushrang": "Kumushrang 🤍",
     "feruza": "Feruza rang 🩵",
+    "feruza rang": "Feruza rang 🩵",
+    "biryuzoviy": "Feruza rang 🩵",
+    "бирюзовый": "Feruza rang 🩵",
+
+    # Colloquial & popular boutique fashion colors
+    "balotiviy": "Bolotniy 💚",
+    "balotivaya": "Bolotniy 💚",
+    "balotviy": "Bolotniy 💚",
+    "balotniy": "Bolotniy 💚",
+    "balotnaya": "Bolotniy 💚",
+    "balotni": "Bolotniy 💚",
+    "bolotniy": "Bolotniy 💚",
+    "bolotnaya": "Bolotniy 💚",
+    "болотный": "Bolotniy 💚",
+    "болотная": "Bolotniy 💚",
+    "болотное": "Bolotniy 💚",
+    "болотний": "Bolotniy 💚",
+    "botqoq": "Bolotniy 💚",
+    "botqoq rang": "Bolotniy 💚",
+    "choco": "Choco 🍫",
+    "choko": "Choco 🍫",
+    "chocolate": "Shokolad 🍫",
+    "shoko": "Choco 🍫",
+    "shokolad": "Shokolad 🍫",
+    "shokolad rang": "Shokolad 🍫",
+    "shokoladli": "Shokolad 🍫",
+    "шоколад": "Shokolad 🍫",
+    "шоколадный": "Shokolad 🍫",
+    "шоколадная": "Shokolad 🍫",
+    "шоколадное": "Shokolad 🍫",
+    "malina": "Malina rang 🍓",
+    "malinoviy": "Malina rang 🍓",
+    "малиновый": "Malina rang 🍓",
+    "vishenka": "Olchali 🍒",
+    "vishneviy": "Olchali 🍒",
+    "вишневый": "Olchali 🍒",
+    "limon": "Limonrang 💛",
+    "limoniy": "Limonrang 💛",
+    "лимонный": "Limonrang 💛",
+    "grafit": "Grafit 🩶",
+    "графит": "Grafit 🩶",
+    "antratsit": "Antratsit 🖤",
+    "антрацит": "Antratsit 🖤",
+    "marsala": "Marsala ❤️",
+    "марсала": "Marsala ❤️",
+    "terrakot": "Terrakot 🤎",
+    "терракот": "Terrakot 🤎",
+    "terrakotoviy": "Terrakot 🤎",
 }
 
 # Multilingual category slug mapping
@@ -573,6 +621,13 @@ def convert_currency_to_uzs(
     return int(round(val))
 
 
+COLOR_NOISE_WORDS = {
+    "va", "bilan", "yoki", "ham", "hamda", "and", "or",
+    "bor", "mavjud", "rang", "rangi", "rangda", "ranglari", "rangida", "rangidan", "idan",
+    "idan bor", "i qora va oq", "bor:", "mavjud:", "tasi", "ta", "xil", "xillari", "xili", "barcha", "dona"
+}
+
+
 def normalize_color(color_name: str) -> str:
     """
     Normalizes a single color token into aesthetic Uzbek name with emoji.
@@ -588,18 +643,30 @@ def normalize_color(color_name: str) -> str:
     clean = re.sub(r"[（(【\[][^）)】\]]*[）)】\]]", "", clean).strip()
     # Strip common package/garment suffixes in Chinese (e.g. 黑色单件 -> 黑色)
     clean = re.sub(r"(?:单件|套装|加绒|加棉|加厚|薄款|两件套|常规)$", "", clean).strip()
+    # Clean leading/trailing punctuation
+    clean = re.sub(r"^[^\w\u0400-\u04FF\u4e00-\u9fff🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾]+|[^\w\u0400-\u04FF\u4e00-\u9fff🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾]+$", "", clean).strip()
     clean = re.sub(r"\s+", " ", clean).strip()
     if not clean:
         return ""
 
-    # If it already has an emoji, check if base word matches dictionary
     lower = clean.lower()
-    for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐":
+    if lower in COLOR_NOISE_WORDS:
+        return ""
+    if len(lower) <= 1 and not re.search(r"[\u4e00-\u9fff]", lower):
+        return ""
+
+    # If it already has an emoji, check if base word matches dictionary
+    for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾":
         if em in clean:
-            base_word = clean.replace(em, "").strip().lower()
+            clean_word = re.sub(r"\s+", " ", clean).strip()
+            clean_word = re.sub(r"\s+([,.:;!?])", r"\1", clean_word)
+            base_word = clean_word.replace(em, "").strip().lower()
+            base_clean = re.sub(r"[^\w\u0400-\u04FF\u4e00-\u9fff]", "", base_word).strip()
+            if base_clean in COLOR_MAP:
+                return COLOR_MAP[base_clean]
             if base_word in COLOR_MAP:
                 return COLOR_MAP[base_word]
-            return clean
+            return clean_word
 
     # Exact dictionary match
     if lower in COLOR_MAP:
@@ -607,12 +674,14 @@ def normalize_color(color_name: str) -> str:
 
     # Clean punctuation and check again
     sub_clean = re.sub(r"[^\w\s\u0400-\u04FF\u4e00-\u9fff]", "", lower).strip()
+    if sub_clean in COLOR_NOISE_WORDS:
+        return ""
     if sub_clean in COLOR_MAP:
         return COLOR_MAP[sub_clean]
 
-    # Partial / substring check
+    # Partial / substring check (whole word match)
     for key, mapped in COLOR_MAP.items():
-        if key in sub_clean:
+        if re.search(r"(?:\b|_)" + re.escape(key) + r"(?:\b|_)", sub_clean):
             return mapped
 
     # Fallback: capitalize clean name with cute flower
@@ -642,7 +711,7 @@ def deduplicate_colors(colors_list: List[str]) -> List[str]:
         if not c_clean:
             continue
         lower_exact = c_clean.lower()
-        if lower_exact in seen_exact:
+        if lower_exact in seen_exact or lower_exact in COLOR_NOISE_WORDS:
             continue
         words = tuple(sorted(re.findall(r"[a-zA-Z\u0400-\u04FF\u4e00-\u9fff]+", lower_exact)))
         words = tuple(w for w in words if w not in ("va", "bilan", "yoki", "rang", "rangi"))
@@ -673,21 +742,78 @@ def deduplicate_colors(colors_list: List[str]) -> List[str]:
 
 def normalize_colors(colors_input: Union[str, List[str], None]) -> List[str]:
     """
-    Normalizes a list or string of colors into aesthetic Uzbek color names.
+    Normalizes a list or string of colors into aesthetic Uzbek color names with emoji stickers.
+    Splits comma/slash/pipe/newline separated colors, unpacks space-separated color lists
+    (e.g. 'pushti qizil qora balotiviy choco'), and discards noise tokens ('idan bor').
     """
     if not colors_input:
         return []
 
-    tokens: List[str] = []
+    raw_items: List[str] = []
     if isinstance(colors_input, str):
-        # Split by comma, slash, semicolon, pipe or newline
-        parts = re.split(r"[,;/|\n\r]+", colors_input)
-        tokens = [p.strip() for p in parts if p.strip()]
+        parts = re.split(r"[,;/|\n\r•]+|\s+(?:va|bilan|yoki|and)\s+", colors_input, flags=re.IGNORECASE)
+        raw_items = [p.strip() for p in parts if p.strip()]
     elif isinstance(colors_input, (list, tuple)):
         for item in colors_input:
             if isinstance(item, str):
-                parts = re.split(r"[,;/|\n\r]+", item)
-                tokens.extend([p.strip() for p in parts if p.strip()])
+                parts = re.split(r"[,;/|\n\r•]+|\s+(?:va|bilan|yoki|and)\s+", item, flags=re.IGNORECASE)
+                raw_items.extend([p.strip() for p in parts if p.strip()])
+
+    tokens: List[str] = []
+    for item in raw_items:
+        clean_item = re.sub(r"\s+", " ", item).strip()
+        if not clean_item:
+            continue
+
+        # If it contains an emoji, preserve as a distinct color token
+        has_emoji = any(em in clean_item for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾")
+        if has_emoji:
+            tokens.append(clean_item)
+            continue
+
+        item_lower = clean_item.lower()
+        if item_lower in COLOR_MAP:
+            tokens.append(clean_item)
+            continue
+
+        # If multi-word string that is not a known single color in COLOR_MAP, unpack space-separated colors
+        words = clean_item.split()
+        if len(words) > 1:
+            i = 0
+            sub_tokens = []
+            found_sub = False
+            while i < len(words):
+                w = re.sub(r"^[^\w\u0400-\u04FF\u4e00-\u9fff]+|[^\w\u0400-\u04FF\u4e00-\u9fff]+$", "", words[i])
+                if not w:
+                    i += 1
+                    continue
+                # Check 2-word phrase first (e.g. "to'q ko'k", "krem rang", "qahva rangi")
+                if i + 1 < len(words):
+                    next_w = re.sub(r"^[^\w\u0400-\u04FF\u4e00-\u9fff]+|[^\w\u0400-\u04FF\u4e00-\u9fff]+$", "", words[i + 1])
+                    w2 = f"{w} {next_w}".lower()
+                    if w2 in COLOR_MAP:
+                        sub_tokens.append(w2)
+                        found_sub = True
+                        i += 2
+                        continue
+                w_lower = w.lower()
+                if w_lower in COLOR_MAP:
+                    sub_tokens.append(w)
+                    found_sub = True
+                    i += 1
+                    continue
+                if w_lower in COLOR_NOISE_WORDS:
+                    i += 1
+                    continue
+                # Unrecognized word
+                sub_tokens.append(w)
+                i += 1
+
+            if found_sub and sub_tokens:
+                tokens.extend(sub_tokens)
+                continue
+
+        tokens.append(clean_item)
 
     result: List[str] = []
     for t in tokens:

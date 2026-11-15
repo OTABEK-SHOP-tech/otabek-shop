@@ -45,6 +45,8 @@ async def admin_create_product(
     cargo_rate = await get_cargo_rate(db)
     clean_title = strip_private_pricing_data(payload.title) or payload.title
     clean_desc = strip_private_pricing_data(payload.description or "")
+    from api.services.vision_ocr import normalize_colors
+    clean_colors = normalize_colors(payload.colors) if payload.colors else []
     prod = Product(
         title=clean_title,
         description=clean_desc,
@@ -54,7 +56,7 @@ async def admin_create_product(
         category=payload.category,
         photos=payload.photos,
         sizes=payload.sizes,
-        colors=payload.colors,
+        colors=clean_colors,
         weight_grams=payload.weight_grams,
         in_stock=payload.in_stock,
         is_new=payload.is_new,
@@ -84,6 +86,9 @@ async def admin_update_product(
         update_data["title"] = strip_private_pricing_data(update_data["title"]) or update_data["title"]
     if "description" in update_data and update_data["description"]:
         update_data["description"] = strip_private_pricing_data(update_data["description"])
+    if "colors" in update_data and update_data["colors"]:
+        from api.services.vision_ocr import normalize_colors
+        update_data["colors"] = normalize_colors(update_data["colors"])
     for key, value in update_data.items():
         setattr(prod, key, value)
 

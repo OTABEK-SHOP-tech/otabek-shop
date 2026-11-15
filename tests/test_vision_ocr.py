@@ -230,6 +230,17 @@ def test_normalize_colors_list_and_string():
     # Pre-emoji preservation
     assert normalize_colors(["Pushti 🌸", "Oq 🤍"]) == ["Pushti 🌸", "Oq 🤍"]
 
+    # Unpack space-separated colloquial colors and attach heart/stickers
+    user_colors = "pushti qizil qora balotiviy choco, Bej 🤎 , Jigarrang 🤎"
+    assert normalize_colors(user_colors) == [
+        "Pushti 🌸", "Qizil ❤️", "Qora 🖤", "Bolotniy 💚", "Choco 🍫", "Bej 🤎", "Jigarrang 🤎"
+    ]
+
+    # Filter noise words like 'idan bor', 'i qora va oq'
+    assert normalize_colors(["idan bor", "Yashil 💚"]) == ["Yashil 💚"]
+    assert normalize_colors(["i qora va oq", "Qora 🖤", "Oq 🤍"]) == ["Qora 🖤", "Oq 🤍"]
+    assert normalize_colors("to'q ko'k va pushti") == ["To'q ko'k 💙", "Pushti 🌸"]
+
 
 # ============================================================================
 # 4. MULTILINGUAL CATEGORY MAPPING TESTS

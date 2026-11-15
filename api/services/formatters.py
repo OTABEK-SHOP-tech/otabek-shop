@@ -680,12 +680,12 @@ def build_channel_caption(
             quote_lines.append(f"🐾 <b>Razmer:</b> {sizes_display}")
 
         if colors and len(colors) > 0:
-            from api.services.vision_ocr import deduplicate_colors
+            from api.services.vision_ocr import normalize_colors
             raw_c = [strip_private_pricing_data(c) for c in colors if c]
-            clean_colors = deduplicate_colors(raw_c)
+            clean_colors = normalize_colors(raw_c)
             if clean_colors:
                 colors_display = ", ".join(clean_colors)
-                colors_display = re.sub(r"\s+,", ",", colors_display)
+                colors_display = re.sub(r"\s+([,.:;!?])", r"\1", colors_display)
                 quote_lines.append(f"🎨 <b>Ranglar:</b> {colors_display}")
 
         if cargo_rate_avia is not None and cargo_rate_avto is not None:
@@ -903,13 +903,14 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
 
     # 6. Extract colors if present
     match_color = re.search(
-        r"(?:🎨\s*)?(?:rang(?:lar)?|color(?:s)?|цвет(?:а)?)\s*[:\-]?\s*([^\n\r]+)",
+        r"(?:🎨\s*)?(?:rang(?:lar(?:i|idan\s*bor)?|i)?|color(?:s)?|цвет(?:а|ами)?)\s*[:\-]?\s*([^\n\r]+)",
         text,
         re.IGNORECASE,
     )
     if match_color:
         raw_colors = match_color.group(1).strip()
-        result["colors"] = [c.strip() for c in re.split(r"[,;/|]+", raw_colors) if c.strip()]
+        from api.services.vision_ocr import normalize_colors
+        result["colors"] = normalize_colors(raw_colors)
 
     # 7. Extract weight if present
     match_weight = re.search(r"(\d+)\s*(?:g|gr|gramm|грамм)\b", text, re.IGNORECASE)

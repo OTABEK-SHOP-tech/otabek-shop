@@ -412,7 +412,12 @@ def build_product_import_summary_text(data: dict) -> str:
     source_label = data.get("source_label", "Mahsulot importi")
 
     sizes_display = format_sizes_display(sizes) if sizes else "Standart"
-    colors_display = ", ".join(colors) if colors else "Standart"
+    if colors:
+        from api.services.vision_ocr import normalize_colors
+        norm_colors = normalize_colors(colors)
+        colors_display = ", ".join(norm_colors) if norm_colors else "Standart"
+    else:
+        colors_display = "Standart"
     source_price_str = format_price(source_price) if source_price else "Aniqlanmadi"
     retail_price_str = format_price(retail_price) if retail_price else "Aniqlanmadi"
     margin_str = f"+{int(round(margin_percent))}%" if margin_percent is not None else "+30%"
@@ -1587,7 +1592,10 @@ async def process_wizard_colors(message: Message, state: FSMContext):
     if "standart" in text.lower() or "rasmda" in text.lower() or text in ["O'tkazib yuborish ⏭️", "Rasmda ko'rsatilgan (Standart) 🌸"]:
         colors = ["Rasmda ko'rsatilgan"]
     else:
-        colors = [c.strip() for c in re.split(r"[,;/|]+", text) if c.strip()]
+        from api.services.vision_ocr import normalize_colors
+        colors = normalize_colors(text)
+        if not colors:
+            colors = [c.strip() for c in re.split(r"[,;/|]+", text) if c.strip()]
 
     await state.update_data(colors=colors)
     data = await state.get_data()
@@ -1660,7 +1668,9 @@ async def handle_save_product(callback: CallbackQuery, state: FSMContext):
     prod_sizes = list(data.get("sizes") or [])
     if not prod_sizes and is_non_clothing_category(category_slug):
         prod_sizes = ["Standart"]
-    prod_colors = [strip_private_pricing_data(c) for c in (data.get("colors") or []) if strip_private_pricing_data(c)]
+    from api.services.vision_ocr import normalize_colors
+    raw_colors = [strip_private_pricing_data(c) for c in (data.get("colors") or []) if strip_private_pricing_data(c)]
+    prod_colors = normalize_colors(raw_colors)
     if not prod_colors:
         prod_colors = ["Rasmda ko'rsatilgan"]
 
