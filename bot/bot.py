@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from api.config import settings
 from bot.loader import bot, dp
-from bot.handlers import start, channel, admin, inline, orders, contest, admin_contest, channel_member
+from bot.handlers import start, channel, admin, inline, orders, contest, admin_contest, channel_member, referral
 from db.models import Admin
 from db.session import async_session_factory
 
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 def setup_routers(dp: Dispatcher):
     dp.include_router(start.router)
+    dp.include_router(referral.router)
     dp.include_router(contest.router)
     dp.include_router(admin_contest.router)
     dp.include_router(channel_member.router)
@@ -26,6 +27,7 @@ def setup_routers(dp: Dispatcher):
 async def setup_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="Do'konni ochish 🌸"),
+        BotCommand(command="referral", description="20% chegirma (Do'stlarni taklif qilish) 🎁"),
         BotCommand(command="admin", description="Admin paneli 👑"),
         BotCommand(command="boost", description="AI Vision orqali tovar qo'shish 🚀"),
         BotCommand(command="cancel", description="Amalni bekor qilish ❌"),

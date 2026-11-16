@@ -594,6 +594,7 @@ export const App: React.FC = () => {
                 reducedMotion={reducedMotion}
                 onToggleReducedMotion={() => setReducedMotion(!reducedMotion)}
                 t={t}
+                initData={initData}
               />
             )}
 

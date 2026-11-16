@@ -11,6 +11,8 @@ CONTEST_BUTTON_TEXT = "🎁 Konkursda qatnashish"
 # Users who never re-sent /start still have the old label cached in their keyboard.
 LEGACY_CONTEST_BUTTON_TEXT = "🎁 Konkurs"
 RATING_BUTTON_TEXT = "🏆 Reyting"
+REFERRAL_BUTTON_TEXT = "👥 Do'stlarni taklif qilish (20% chegirma)"
+LEGACY_REFERRAL_BUTTON_TEXT = "👥 Do'stlarni taklif qilish"
 
 
 def get_main_reply_keyboard(webapp_url: str = settings.WEBAPP_URL) -> ReplyKeyboardMarkup:
@@ -28,6 +30,9 @@ def get_main_reply_keyboard(webapp_url: str = settings.WEBAPP_URL) -> ReplyKeybo
     return ReplyKeyboardMarkup(
         keyboard=[
             [first_btn],
+            [
+                KeyboardButton(text=REFERRAL_BUTTON_TEXT),
+            ],
             [
                 KeyboardButton(text=CONTEST_BUTTON_TEXT),
                 KeyboardButton(text=RATING_BUTTON_TEXT),

@@ -67,7 +67,7 @@ async def handle_channel_member_updated(event: ChatMemberUpdated):
                         pass
             return
 
-        # Handle customer leaving the channel
+        # Handle customer leaving or joining the channel
         old_status = event.old_chat_member.status
         new_status = event.new_chat_member.status
 
@@ -75,7 +75,34 @@ async def handle_channel_member_updated(event: ChatMemberUpdated):
             old_status == "restricted" and getattr(event.old_chat_member, "is_member", True)
         )
         is_left = new_status in ("left", "kicked")
+        is_joined = new_status in ("member", "administrator", "creator") or (
+            new_status == "restricted" and getattr(event.new_chat_member, "is_member", True)
+        )
 
         if was_member and is_left:
-            logger.info(f"User {user.id} left the channel. Revoking contest point if applicable.")
+            logger.info(f"User {user.id} left the channel. Revoking contest/referral points if applicable.")
             await revoke_referral_on_leave(session, bot, user.id)
+            from bot.services.referral_service import revoke_referral_on_channel_leave
+            await revoke_referral_on_channel_leave(session, bot, user.id)
+
+        elif not was_member and is_joined:
+            logger.info(f"User {user.id} joined the channel. Checking for pending referral.")
+            from db.models import Referral
+            from bot.services.referral_service import confirm_referral
+            ref_q = await session.execute(
+                select(Referral).where(
+                    Referral.invitee_id == user.id,
+                    Referral.status.in_(["pending", "revoked"]),
+                )
+            )
+            pending_ref = ref_q.scalars().first()
+            if pending_ref:
+                logger.info(f"Auto-confirming referral for user {user.id} referred by {pending_ref.referrer_id}")
+                bot_me = await bot.get_me()
+                await confirm_referral(
+                    session=session,
+                    bot=bot,
+                    invitee_id=user.id,
+                    referrer_id=pending_ref.referrer_id,
+                    bot_username=bot_me.username,
+                )

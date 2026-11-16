@@ -63,6 +63,9 @@ export interface Order {
   formatted_total: string;
   estimated_cargo: number;
   formatted_cargo: string;
+  promo_code?: string | null;
+  discount_amount?: number;
+  formatted_discount_amount?: string;
   cashback_used?: number;
   formatted_cashback_used?: string;
   cargo_stage?: string;
@@ -198,3 +201,53 @@ export interface SuspiciousUserItem {
   revoked_invites: number;
   revoked_ratio: number;
 }
+
+export interface ReferralCoupon {
+  id: number;
+  code: string;
+  discount_percent: number;
+  milestone: number;
+  is_used: boolean;
+  is_valid: boolean;
+  used_at?: string | null;
+  discount_amount?: number;
+  created_at?: string;
+}
+
+export interface ReferralInviteItem {
+  invitee_id: number;
+  name: string;
+  status: 'pending' | 'confirmed' | 'revoked';
+  was_member_before: boolean;
+  created_at?: string | null;
+  confirmed_at?: string | null;
+}
+
+export interface ReferralStats {
+  user_id: number;
+  referral_link: string;
+  confirmed_count: number;
+  pending_count: number;
+  revoked_count: number;
+  next_milestone: number;
+  friends_needed_for_next: number;
+  total_coupons_earned: number;
+  available_coupons: ReferralCoupon[];
+  used_coupons: ReferralCoupon[];
+  recent_invites: ReferralInviteItem[];
+}
+
+export interface CouponValidation {
+  valid: boolean;
+  coupon_id?: number;
+  code?: string;
+  discount_percent: number;
+  milestone?: number;
+  product_id?: number;
+  product_title?: string;
+  unit_price?: number;
+  discount_amount: number;
+  formatted_discount_amount: string;
+  message: string;
+}
+

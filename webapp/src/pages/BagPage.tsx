@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Trash2, Plus, Minus, Send, Copy, Check, ShoppingBag, ArrowRight, Truck, Coins, Sparkles, ShieldCheck, Camera, CreditCard } from 'lucide-react';
-import { CartSummary, Order, ShopSettings, UserCashback } from '../types';
+import { Trash2, Plus, Minus, Send, Copy, Check, ShoppingBag, ArrowRight, Truck, Coins, Sparkles, ShieldCheck, Camera, CreditCard, Gift, Ticket } from 'lucide-react';
+import { CartSummary, Order, ShopSettings, UserCashback, ReferralStats, ReferralCoupon, CouponValidation } from '../types';
 import { formatPrice, getMediaUrl } from '../utils/format';
 import { getTelegramWebApp, haptic, openTelegramLink, playBoutiqueSound } from '../utils/telegram';
 import { triggerPetalBurst } from '../components/PetalBurst';
@@ -38,6 +38,14 @@ export const BagPage: React.FC<BagPageProps> = ({
   const [cashbackInfo, setCashbackInfo] = useState<UserCashback | null>(null);
   const [useCashback, setUseCashback] = useState(false);
 
+  // 20% Referral Coupons state
+  const [referralStats, setReferralStats] = useState<ReferralStats | null>(null);
+  const [selectedCoupon, setSelectedCoupon] = useState<ReferralCoupon | null>(null);
+  const [manualCouponCode, setManualCouponCode] = useState('');
+  const [validatedCoupon, setValidatedCoupon] = useState<CouponValidation | null>(null);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+
   const items = cart?.items || [];
   const hasItems = items.length > 0;
 
@@ -56,15 +64,79 @@ export const BagPage: React.FC<BagPageProps> = ({
       .catch(() => {});
   }, [initData]);
 
-  // Max cashback allowed is 20% of subtotal
+  // Load referral coupons from backend
+  useEffect(() => {
+    if (!initData) return;
+    fetch('/api/referrals/me', {
+      headers: {
+        'X-Telegram-Init-Data': initData,
+      },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: ReferralStats | null) => {
+        if (data) setReferralStats(data);
+      })
+      .catch(() => {});
+  }, [initData]);
+
+  const availableCoupons = (referralStats?.available_coupons || []).filter(
+    (cp) => cp.is_valid && !cp.is_used
+  );
+
+  // Target product for 20% discount (chosen or highest priced item)
+  const targetProduct = items.length > 0
+    ? (selectedProductId
+        ? items.find((it) => it.product_id === selectedProductId) || items[0]
+        : items.reduce((prev, curr) => (prev.product_price > curr.product_price ? prev : curr), items[0]))
+    : null;
+
+  const activeCouponCode = selectedCoupon?.code || validatedCoupon?.code || null;
+  const couponDiscount = (activeCouponCode && targetProduct)
+    ? Math.floor(targetProduct.product_price * 0.20)
+    : 0;
+
   const rawSubtotal = cart?.subtotal || 0;
+  const subtotalAfterCoupon = Math.max(0, rawSubtotal - couponDiscount);
+
+  // Max cashback allowed is 20% of subtotal after coupon discount
   const maxAllowedCashback = Math.min(
     cashbackInfo?.cashback_balance || 0,
-    Math.floor(rawSubtotal * 0.2)
+    Math.floor(subtotalAfterCoupon * 0.2)
   );
 
   const cashbackDiscount = useCashback ? maxAllowedCashback : 0;
-  const finalPayableTotal = Math.max(0, (cart?.grand_total || 0) - cashbackDiscount);
+  const finalPayableTotal = Math.max(0, subtotalAfterCoupon - cashbackDiscount);
+
+  const handleValidateManualCoupon = async () => {
+    if (!manualCouponCode.trim() || isValidatingCoupon) return;
+    setIsValidatingCoupon(true);
+    try {
+      const resp = await fetch('/api/referrals/validate-coupon', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Telegram-Init-Data': initData,
+        },
+        body: JSON.stringify({
+          code: manualCouponCode.trim().toUpperCase(),
+          product_id: targetProduct ? targetProduct.product_id : undefined,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.valid) {
+        alert(data.detail || data.message || "Kupon topilmadi yoki yaroqsiz");
+        setValidatedCoupon(null);
+      } else {
+        setValidatedCoupon(data);
+        haptic.notification('success');
+        playBoutiqueSound('success');
+      }
+    } catch (e) {
+      alert("Kuponni tekshirishda xatolik yuz berdi");
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
 
   // Handle Telegram MainButton
   useEffect(() => {
@@ -72,8 +144,9 @@ export const BagPage: React.FC<BagPageProps> = ({
     if (!tg?.MainButton) return;
 
     if (hasItems && !completedOrder) {
-      const btnText = cashbackDiscount > 0
-        ? `${t.checkoutButton} (-${formatPrice(cashbackDiscount)})`
+      const totalSavings = couponDiscount + cashbackDiscount;
+      const btnText = totalSavings > 0
+        ? `${t.checkoutButton} (-${formatPrice(totalSavings)})`
         : t.checkoutButton;
       tg.MainButton.setText(btnText);
       tg.MainButton.show();
@@ -91,7 +164,7 @@ export const BagPage: React.FC<BagPageProps> = ({
     } else {
       tg.MainButton.hide();
     }
-  }, [hasItems, completedOrder, t.checkoutButton, cashbackDiscount]);
+  }, [hasItems, completedOrder, t.checkoutButton, couponDiscount, cashbackDiscount]);
 
   const handleCheckout = async () => {
     if (!hasItems || isSubmitting) return;
@@ -102,6 +175,7 @@ export const BagPage: React.FC<BagPageProps> = ({
     haptic.impact('heavy');
 
     try {
+      const couponCodeToSend = activeCouponCode || (manualCouponCode.trim() ? manualCouponCode.trim() : undefined);
       const resp = await fetch('/api/orders', {
         method: 'POST',
         headers: {
@@ -110,11 +184,14 @@ export const BagPage: React.FC<BagPageProps> = ({
         },
         body: JSON.stringify({
           use_cashback: useCashback ? maxAllowedCashback : 0,
+          coupon_code: couponCodeToSend,
+          coupon_product_id: couponCodeToSend && targetProduct ? targetProduct.product_id : undefined,
         }),
       });
 
       if (!resp.ok) {
-        throw new Error('Order creation failed');
+        const errData = await resp.json().catch(() => null);
+        throw new Error(errData?.detail || 'Order creation failed');
       }
 
       const orderData: Order = await resp.json();
@@ -123,10 +200,10 @@ export const BagPage: React.FC<BagPageProps> = ({
       playBoutiqueSound('success');
       haptic.notification('success');
       onOrderSuccess(orderData);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       haptic.notification('error');
-      alert("Buyurtma berishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.");
+      alert(err.message || "Buyurtma berishda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.");
     } finally {
       setIsSubmitting(false);
       tg?.MainButton?.hideProgress();
@@ -160,6 +237,9 @@ export const BagPage: React.FC<BagPageProps> = ({
         )
         .join('\n') +
       `\n\nJami: ${formatPrice(completedOrder.total)}\n` +
+      (completedOrder.discount_amount && completedOrder.discount_amount > 0
+        ? `🎟 20% Chegirma (${completedOrder.promo_code || 'Kupon'}): -${formatPrice(completedOrder.discount_amount)}\n`
+        : '') +
       (completedOrder.cashback_used && completedOrder.cashback_used > 0
         ? `💰 Keshbek ishlatildi: -${formatPrice(completedOrder.cashback_used)}\n`
         : '') +
@@ -442,6 +522,149 @@ export const BagPage: React.FC<BagPageProps> = ({
         ))}
       </div>
 
+      {/* 20% Referral Coupon System */}
+      <div className="mt-4 p-3.5 rounded-3xl bg-gradient-to-r from-pink-50 via-rose-50 to-purple-50 dark:from-pink-950/40 dark:via-rose-950/40 dark:to-purple-950/40 border border-sakura-pink/50 shadow-sakura-xs">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Gift className="w-4 h-4 text-sakura-rose shrink-0 mt-0.5" />
+            <div>
+              <span className="text-xs font-bold text-sakura-darkrose dark:text-sakura-pink block">
+                20% Chegirma kuponi (Do'stlar taklifi)
+              </span>
+              <span className="text-[10px] text-sakura-plum/70 dark:text-sakura-blush/70">
+                Har 5 ta do'st uchun 1 dona tovaringizga 20% chegirma
+              </span>
+            </div>
+          </div>
+
+          {availableCoupons.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-sakura-rose text-white shadow-xs">
+              {availableCoupons.length} ta kupon
+            </span>
+          )}
+        </div>
+
+        {/* Available coupons selector */}
+        {availableCoupons.length > 0 && (
+          <div className="mt-2.5 space-y-1.5">
+            <span className="text-[11px] font-semibold text-sakura-plum/80 dark:text-sakura-blush/80 block">
+              Mavjud 20% chegirma kuponlaringiz:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {availableCoupons.map((cp) => {
+                const isSelected = selectedCoupon?.code === cp.code;
+                return (
+                  <button
+                    key={cp.id}
+                    type="button"
+                    onClick={() => {
+                      haptic.impact('light');
+                      playBoutiqueSound('tap');
+                      if (isSelected) {
+                        setSelectedCoupon(null);
+                      } else {
+                        setSelectedCoupon(cp);
+                        setManualCouponCode(cp.code);
+                        setValidatedCoupon(null);
+                      }
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold font-mono transition-all active:scale-95 flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-sakura-rose text-white shadow-xs'
+                        : 'bg-white dark:bg-sakura-darkcard text-sakura-plum dark:text-sakura-blush border border-sakura-pink/40'
+                    }`}
+                  >
+                    <span>🎟 {cp.code}</span>
+                    <span className="text-[10px] opacity-80">(-20%)</span>
+                    {isSelected && <Check className="w-3 h-3 text-white" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Manual coupon input if no coupons preloaded or entering a code */}
+        <div className="mt-2.5 flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Kupon kodi (masalan: REF20-XXXX-YYYY)"
+            value={manualCouponCode}
+            onChange={(e) => {
+              setManualCouponCode(e.target.value.toUpperCase());
+              if (selectedCoupon && selectedCoupon.code !== e.target.value.toUpperCase()) {
+                setSelectedCoupon(null);
+              }
+            }}
+            className="flex-1 px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-sakura-darkcard border border-sakura-pink/40 text-sakura-plum dark:text-white uppercase font-mono placeholder:normal-case placeholder:font-sans focus:outline-none focus:border-sakura-rose"
+          />
+          {selectedCoupon || validatedCoupon ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCoupon(null);
+                setValidatedCoupon(null);
+                setManualCouponCode('');
+                haptic.selection();
+              }}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 active:scale-95"
+            >
+              Bekor qilish
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleValidateManualCoupon}
+              disabled={!manualCouponCode.trim() || isValidatingCoupon}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-sakura-rose text-white active:scale-95 disabled:opacity-50"
+            >
+              {isValidatingCoupon ? '...' : "Qo'llash"}
+            </button>
+          )}
+        </div>
+
+        {/* Target product selector if multiple items in cart and coupon is active */}
+        {(selectedCoupon || validatedCoupon) && items.length > 1 && (
+          <div className="mt-2.5 p-2 rounded-xl bg-white/80 dark:bg-sakura-darkcard/80 border border-sakura-pink/30">
+            <span className="text-[10px] font-bold text-sakura-plum/80 dark:text-sakura-blush/80 block mb-1">
+              Qaysi tovaringizga 20% chegirma qo'llansin?
+            </span>
+            <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
+              {items.map((it) => {
+                const isTarget = targetProduct?.product_id === it.product_id;
+                const itDiscount = Math.floor(it.product_price * 0.20);
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedProductId(it.product_id);
+                      haptic.selection();
+                    }}
+                    className={`px-2 py-1 rounded-lg text-[11px] text-left flex items-center justify-between transition-all ${
+                      isTarget
+                        ? 'bg-sakura-rose/15 text-sakura-darkrose dark:text-sakura-pink font-bold border border-sakura-rose/40'
+                        : 'text-sakura-plum/70 dark:text-sakura-blush/70 hover:bg-sakura-pink/10'
+                    }`}
+                  >
+                    <span className="truncate max-w-[190px]">{it.product_title}</span>
+                    <span className="text-sakura-rose dark:text-sakura-pink shrink-0 font-mono">-{formatPrice(itDiscount)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Applied coupon banner */}
+        {(selectedCoupon || validatedCoupon) && targetProduct && (
+          <div className="mt-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 p-2 rounded-xl border border-emerald-300 dark:border-emerald-800 flex items-center justify-between">
+            <span className="truncate max-w-[210px]">✓ 20% Chegirma ({targetProduct.product_title}):</span>
+            <span className="font-extrabold font-mono">-{formatPrice(couponDiscount)}</span>
+          </div>
+        )}
+      </div>
+
       {/* 2% Cashback System Integration (#24) */}
       {cashbackInfo && cashbackInfo.cashback_balance > 0 && maxAllowedCashback > 0 && (
         <div className="mt-4 p-3.5 rounded-3xl bg-gradient-to-r from-amber-50 to-pink-50 dark:from-amber-950/40 dark:to-pink-950/40 border border-amber-200/80 dark:border-amber-800/60 shadow-sakura-xs">
@@ -486,6 +709,12 @@ export const BagPage: React.FC<BagPageProps> = ({
           <span className="text-sakura-plum/70 dark:text-sakura-blush/70">Kargo (100g):</span>
           <span className="font-bold text-sakura-rose">10.000 / 14.000 so'm (Kargo uchun alohida to'lov)</span>
         </div>
+        {couponDiscount > 0 && targetProduct && (
+          <div className="flex justify-between text-xs py-1 text-rose-600 dark:text-rose-400 font-bold">
+            <span className="truncate max-w-[200px]">20% Chegirma ({targetProduct.product_title}):</span>
+            <span>-{formatPrice(couponDiscount)}</span>
+          </div>
+        )}
         {useCashback && maxAllowedCashback > 0 && (
           <div className="flex justify-between text-xs py-1 text-emerald-600 dark:text-emerald-400 font-bold">
             <span>Keshbek chegirmasi (20%):</span>

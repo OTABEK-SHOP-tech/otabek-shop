@@ -251,3 +251,59 @@ class PromoCode(Base):
     valid_until = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
+
+class Referral(Base):
+    """
+    Referral model for tracking friend invitations to the channel/shop.
+    Status values: pending, confirmed, revoked
+    """
+    __tablename__ = "referrals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    referrer_id = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False, index=True)
+    invitee_id = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    status = Column(String(50), default="pending", nullable=False, index=True)  # pending, confirmed, revoked
+    was_member_before = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    referrer = relationship("User", foreign_keys=[referrer_id], backref="referrals_sent")
+    invitee = relationship("User", foreign_keys=[invitee_id], backref="referral_received")
+
+    __table_args__ = (
+        CheckConstraint("invitee_id != referrer_id", name="ck_referral_no_self"),
+        Index("ix_referral_referrer_status", "referrer_id", "status"),
+    )
+
+
+class ReferralCoupon(Base):
+    """
+    Referral Coupon model for 20% discount vouchers earned via referrals.
+    Every 5 verified referrals earns 1 single-use 20% coupon for 1 product.
+    Milestones: 5, 10, 15, 20, etc.
+    """
+    __tablename__ = "referral_coupons"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE"), nullable=False, index=True)
+    code = Column(String(50), unique=True, nullable=False, index=True)
+    discount_percent = Column(Integer, default=20, nullable=False)
+    milestone = Column(Integer, nullable=False)  # 5, 10, 15, 20...
+    is_used = Column(Boolean, default=False, nullable=False, index=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    discount_amount = Column(Integer, default=0, nullable=False)  # Amount discounted in so'm
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user = relationship("User", backref="referral_coupons")
+    order = relationship("Order", backref="referral_coupon")
+    product = relationship("Product")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "milestone", name="uq_user_milestone_coupon"),
+        Index("ix_referral_coupon_user_used", "user_id", "is_used"),
+    )
+
+

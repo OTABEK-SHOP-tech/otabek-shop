@@ -1,13 +1,14 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy import select, delete, desc
+from sqlalchemy import select, delete, desc, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import get_current_user, TelegramUser
 from api.schemas import OrderCreate, OrderOut, UserMeOut
 from api.services.formatters import format_price, calculate_cargo, format_cargo_stage
 from bot.services.order_notifier import send_payment_instructions
-from db.models import Order, CartItem, Product, Setting, User
+from bot.services.referral_service import validate_and_calculate_coupon_discount
+from db.models import Order, CartItem, Product, Setting, User, ReferralCoupon, PromoCode, utcnow
 from db.session import get_db
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -87,18 +88,47 @@ async def create_order(
             if w:
                 total_weight += int(w) * int(it.get("qty", 1))
 
-    # Apply cashback if requested (max 20% of total)
+    # Apply 20% coupon discount if provided
+    discount_amount = 0
+    applied_coupon_code = None
+    applied_coupon_obj = None
+
+    if payload.coupon_code:
+        clean_code = payload.coupon_code.strip().upper()
+        val_res = await validate_and_calculate_coupon_discount(
+            session=db,
+            user_id=user.id,
+            code=clean_code,
+            cart_items=items_snapshot,
+            selected_product_id=payload.coupon_product_id,
+        )
+        if not val_res.get("valid"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=val_res.get("message", "Kupon yaroqsiz"),
+            )
+
+        discount_amount = val_res["discount_amount"]
+        applied_coupon_code = clean_code
+
+        rc_res = await db.execute(select(ReferralCoupon).where(ReferralCoupon.code == clean_code))
+        applied_coupon_obj = rc_res.scalars().first()
+
+    subtotal_after_discount = max(0, total - discount_amount)
+
+    # Apply cashback if requested (max 20% of subtotal_after_discount)
     res_user = await db.execute(select(User).where(User.telegram_id == user.id))
     db_user = res_user.scalars().first()
     user_cashback = db_user.cashback_balance if db_user else 0
 
     applied_cashback = 0
     if payload.use_cashback and payload.use_cashback > 0:
-        max_allowed = int(total * 0.20)
+        max_allowed = int(subtotal_after_discount * 0.20)
         applied_cashback = min(payload.use_cashback, user_cashback, max_allowed)
         if applied_cashback > 0 and db_user:
             db_user.cashback_balance -= applied_cashback
-            total = max(0, total - applied_cashback)
+
+    final_total = max(0, subtotal_after_discount - applied_cashback)
 
     estimated_cargo = calculate_cargo(total_weight, cargo_rate)
 
@@ -110,15 +140,56 @@ async def create_order(
         customer_name=customer_name,
         customer_username=customer_username,
         items_snapshot=items_snapshot,
-        total=total,
+        total=final_total,
         estimated_cargo=estimated_cargo,
         status="awaiting_receipt",
         receipt_photo_id=None,
+        promo_code=applied_coupon_code,
+        discount_amount=discount_amount,
         cashback_used=applied_cashback,
         cargo_stage="china_warehouse",
     )
     db.add(new_order)
     await db.flush()
+
+    if applied_coupon_obj:
+        # Atomic update on ReferralCoupon to prevent double-spending under concurrent checkouts
+        stmt_rc = (
+            update(ReferralCoupon)
+            .where(
+                ReferralCoupon.id == applied_coupon_obj.id,
+                ReferralCoupon.is_used == False,
+            )
+            .values(
+                is_used=True,
+                used_at=utcnow(),
+                order_id=new_order.id,
+                product_id=val_res.get("product_id"),
+                discount_amount=discount_amount,
+            )
+        )
+        rc_update_res = await db.execute(stmt_rc)
+        if rc_update_res.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ushbu kupon allaqachon ishlatilgan yoki ayni paytda band ❌",
+            )
+
+        # Also update PromoCode table if present
+        pr_res = await db.execute(select(PromoCode).where(PromoCode.code == applied_coupon_code))
+        promo_obj = pr_res.scalars().first()
+        if promo_obj:
+            promo_obj.used_count += 1
+            if promo_obj.max_uses and promo_obj.used_count >= promo_obj.max_uses:
+                promo_obj.is_active = False
+    elif applied_coupon_code:
+        # General promo code update
+        pr_res = await db.execute(select(PromoCode).where(PromoCode.code == applied_coupon_code))
+        promo_obj = pr_res.scalars().first()
+        if promo_obj:
+            promo_obj.used_count += 1
+            if promo_obj.max_uses and promo_obj.used_count >= promo_obj.max_uses:
+                promo_obj.is_active = False
 
     # Clear user's cart
     await db.execute(delete(CartItem).where(CartItem.user_id == user.id))
@@ -133,7 +204,7 @@ async def create_order(
         customer_name=customer_name,
         customer_username=customer_username,
         items=items_snapshot,
-        total=total,
+        total=final_total,
         estimated_cargo=estimated_cargo,
     )
 
@@ -149,6 +220,9 @@ async def create_order(
         formatted_cargo=format_price(new_order.estimated_cargo),
         status=new_order.status,
         receipt_photo_id=new_order.receipt_photo_id,
+        promo_code=new_order.promo_code,
+        discount_amount=new_order.discount_amount,
+        formatted_discount_amount=format_price(new_order.discount_amount) if new_order.discount_amount else "",
         cashback_used=new_order.cashback_used,
         formatted_cashback_used=format_price(new_order.cashback_used),
         cargo_stage=new_order.cargo_stage,
@@ -179,6 +253,9 @@ async def list_user_orders(
             formatted_cargo=format_price(o.estimated_cargo),
             status=o.status,
             receipt_photo_id=o.receipt_photo_id,
+            promo_code=o.promo_code,
+            discount_amount=o.discount_amount,
+            formatted_discount_amount=format_price(o.discount_amount) if o.discount_amount else "",
             cashback_used=o.cashback_used,
             formatted_cashback_used=format_price(o.cashback_used),
             cargo_stage=o.cargo_stage,

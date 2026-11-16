@@ -274,7 +274,7 @@ async def handle_start(message: Message, command: CommandObject):
 
     # 3. MANDATORY SUBSCRIPTION CHECK (Channel + Chat)
     # Check if user is an admin or subscribed to both channel and chat
-    if not payload.startswith("r_"):
+    if not payload.startswith("r_") and not payload.startswith("ref_"):
         async with async_session_factory() as session:
             if not await is_user_admin(session, user_id):
                 is_ch, is_chat, ch_url, chat_url = await check_dual_subscription(message.bot, session, user_id)
@@ -286,11 +286,102 @@ async def handle_start(message: Message, command: CommandObject):
                     )
                     return
 
+    # Check for REFERRAL direct link: /start referral or /start taklif
+    if payload in ("referral", "taklif", "kupon"):
+        from bot.handlers.referral import render_referral_dashboard
+        await render_referral_dashboard(message, user_id)
+        return
+
     # Check for CONTEST direct link: /start konkurs
     if payload == "konkurs":
         from bot.handlers.contest import show_user_contest_dashboard
         await show_user_contest_dashboard(message, user_id)
         return
+
+    # Check for 20% DISCOUNT REFERRAL deep link: /start ref_<referrer_id>
+    if payload.startswith("ref_"):
+        try:
+            referrer_id = int(payload[4:])
+        except ValueError:
+            referrer_id = 0
+
+        if referrer_id:
+            from bot.services.referral_service import process_referral_start, get_user_referral_link
+            async with async_session_factory() as session:
+                ref_result = await process_referral_start(
+                    session=session,
+                    bot=message.bot,
+                    invitee_id=user_id,
+                    invitee_full_name=full_name,
+                    invitee_username=username,
+                    is_bot=message.from_user.is_bot or False,
+                    referrer_id=referrer_id,
+                    is_new_user=is_new_user,
+                )
+
+                if not ref_result.get("valid"):
+                    reason = ref_result.get("reason")
+                    if reason in ("existing_user", "already_referred_by_other"):
+                        await message.answer(
+                            ref_result.get("message"),
+                            reply_markup=get_main_reply_keyboard(),
+                        )
+                        return
+                    # Malformed, self, or bot payloads safely continue to regular greeting
+                else:
+                    channel_url = ref_result.get("channel_url", "https://t.me/moonlight_chinese_shop")
+                    was_member_before = ref_result.get("was_member_before", False)
+
+                    bot_me = await message.bot.get_me()
+                    personal_link = get_user_referral_link(bot_me.username, user_id)
+
+                    ref_obj = ref_result.get("referral")
+                    if ref_obj and ref_obj.status == "confirmed":
+                        markup = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [InlineKeyboardButton(text="👥 Mening taklif havolam", callback_data="refresh_ref_stats")],
+                                [make_webapp_inline_btn("🌸 Do'konni ochish", settings.WEBAPP_URL)],
+                            ]
+                        )
+                        await message.answer(
+                            "🌸 <b>Siz allaqachon ushbu taklif orqali kanalimizga a'zo bo'lgansiz!</b> 🎀\n\n"
+                            "Endi siz ham o'z do'stlaringizni taklif qilib, "
+                            "har <b>5 ta do'stingiz uchun 20% CHEGIRMA</b> kuponiga ega bo'lishingiz mumkin! 🎁\n\n"
+                            f"🔗 <b>Sizning shaxsiy taklif havolangiz:</b>\n<code>{personal_link}</code>",
+                            reply_markup=markup,
+                        )
+                        return
+
+                    if was_member_before:
+                        markup = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [InlineKeyboardButton(text="👥 Mening taklif havolam", callback_data="refresh_ref_stats")],
+                                [make_webapp_inline_btn("🌸 Do'konni ochish", settings.WEBAPP_URL)],
+                            ]
+                        )
+                        await message.answer(
+                            "🌸 <b>Siz allaqachon kanalimiz a'zosisiz!</b> 🎀\n\n"
+                            "Do'stingizga taklif balli hisoblanmadi, lekin siz ham o'z do'stlaringizni taklif qilib, "
+                            "har <b>5 ta do'stingiz uchun 20% CHEGIRMA</b> kuponiga ega bo'lishingiz mumkin! 🎁\n\n"
+                            f"🔗 <b>Sizning shaxsiy taklif havolangiz:</b>\n<code>{personal_link}</code>",
+                            reply_markup=markup,
+                        )
+                        return
+
+                    # Normal new invitee flow: show subscription prompt
+                    markup = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="📢 Kanalga o'tish", url=channel_url)],
+                            [InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"confirm_ref:{referrer_id}:{user_id}")],
+                        ]
+                    )
+                    await message.answer(
+                        "🌸 <b>Moonlight Chinese Shop ga xush kelibsiz!</b> 🎀\n\n"
+                        "Do'stingiz taklifi bilan kirdingiz. Botdan foydalanish va do'stingizga ball hisoblanishi uchun "
+                        "rasmiy kanalimizga a'zo bo'ling va quyidagi <b>✅ Tasdiqlash</b> tugmasini bosing:",
+                        reply_markup=markup,
+                    )
+                    return
 
     # Check for CONTEST REFERRAL deep link: /start r_<contest_id>_<referrer_id>
     if payload.startswith("r_"):
@@ -524,6 +615,13 @@ async def handle_subscription_confirm(callback: CallbackQuery):
                     return
                 except Exception as e:
                     logger.warning(f"Error displaying contest dashboard after subscription: {e}")
+            elif context in ("referral", "taklif", "kupon"):
+                try:
+                    from bot.handlers.referral import render_referral_dashboard
+                    await render_referral_dashboard(callback.message, user_id)
+                    return
+                except Exception as e:
+                    logger.warning(f"Error displaying referral dashboard after subscription: {e}")
 
         await send_welcome_greeting(callback.message, user_id)
     elif not is_ch and not is_chat:

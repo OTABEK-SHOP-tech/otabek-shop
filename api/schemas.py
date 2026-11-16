@@ -113,6 +113,8 @@ class OrderCreate(BaseModel):
     customer_username: Optional[str] = None
     items: Optional[List[Dict[str, Any]]] = None  # If client provides snapshot, or default to current cart
     use_cashback: Optional[int] = Field(default=0, ge=0)
+    coupon_code: Optional[str] = None
+    coupon_product_id: Optional[int] = None
 
 
 class OrderOut(BaseModel):
@@ -127,6 +129,9 @@ class OrderOut(BaseModel):
     formatted_cargo: str = ""
     status: str  # awaiting_receipt, pending_approval, accepted, cancelled, new
     receipt_photo_id: Optional[str] = None
+    promo_code: Optional[str] = None
+    discount_amount: int = 0
+    formatted_discount_amount: str = ""
     cashback_used: int = 0
     formatted_cashback_used: str = ""
     cargo_stage: str = "china_warehouse"
@@ -356,5 +361,61 @@ class PromoCodeOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==================== REFERRAL & 20% COUPON SCHEMAS ====================
+class ReferralCouponOut(BaseModel):
+    id: int
+    code: str
+    discount_percent: int = 20
+    milestone: int
+    is_used: bool
+    is_valid: bool = True
+    used_at: Optional[str] = None
+    discount_amount: int = 0
+    created_at: Optional[str] = None
+
+
+class ReferralInviteItem(BaseModel):
+    invitee_id: int
+    name: str
+    status: str
+    was_member_before: bool = False
+    created_at: Optional[str] = None
+    confirmed_at: Optional[str] = None
+
+
+class ReferralStatsOut(BaseModel):
+    user_id: int
+    referral_link: str
+    confirmed_count: int
+    pending_count: int
+    revoked_count: int
+    next_milestone: int
+    friends_needed_for_next: int
+    total_coupons_earned: int
+    available_coupons: List[ReferralCouponOut] = []
+    used_coupons: List[ReferralCouponOut] = []
+    recent_invites: List[ReferralInviteItem] = []
+
+
+class CouponValidateRequest(BaseModel):
+    code: str
+    product_id: Optional[int] = None
+
+
+class CouponValidateResponse(BaseModel):
+    valid: bool
+    coupon_id: Optional[int] = None
+    code: Optional[str] = None
+    discount_percent: int = 20
+    milestone: Optional[int] = None
+    product_id: Optional[int] = None
+    product_title: Optional[str] = None
+    unit_price: Optional[int] = None
+    discount_amount: int = 0
+    formatted_discount_amount: str = ""
+    message: str = ""
+
 
 

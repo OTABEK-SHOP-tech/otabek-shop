@@ -1,6 +1,6 @@
-import React from 'react';
-import { Globe, Sparkles, Send, ExternalLink, Shield, Package, Heart } from 'lucide-react';
-import { ShopSettings } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Globe, Sparkles, Send, ExternalLink, Shield, Package, Heart, Gift, Copy, Check, Share2 } from 'lucide-react';
+import { ShopSettings, ReferralStats } from '../types';
 import { Language, Translations } from '../i18n';
 import { openTelegramLink, haptic } from '../utils/telegram';
 import { formatPrice } from '../utils/format';
@@ -14,6 +14,7 @@ interface SettingsPageProps {
   reducedMotion: boolean;
   onToggleReducedMotion: () => void;
   t: Translations;
+  initData?: string;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
@@ -25,7 +26,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   reducedMotion,
   onToggleReducedMotion,
   t,
+  initData,
 }) => {
+  const [referralStats, setReferralStats] = useState<ReferralStats | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  useEffect(() => {
+    if (!initData) return;
+    fetch('/api/referrals/me', {
+      headers: { 'X-Telegram-Init-Data': initData },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: ReferralStats | null) => {
+        if (d) setReferralStats(d);
+      })
+      .catch(() => {});
+  }, [initData]);
+
   const languages: { code: Language; label: string; flag: string }[] = [
     { code: 'uz', label: "O'zbekcha", flag: '🇺🇿' },
     { code: 'ru', label: 'Русский', flag: '🇷🇺' },
@@ -40,6 +57,119 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <span>{t.settings}</span>
         </h2>
       </div>
+
+      {/* 20% Referral Program Card */}
+      {referralStats && (
+        <div className="p-4 rounded-3xl bg-gradient-to-br from-pink-50 via-rose-50 to-purple-50 dark:from-pink-950/40 dark:via-rose-950/40 dark:to-purple-950/40 border border-sakura-pink/40 shadow-sakura-sm mb-3 text-left">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Gift className="w-4 h-4 text-sakura-rose" />
+              <span className="text-xs font-black text-sakura-darkrose dark:text-sakura-pink">
+                20% Chegirma — Do'stlarni taklif qilish
+              </span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sakura-rose text-white">
+              {referralStats.confirmed_count} ta do'st
+            </span>
+          </div>
+
+          <p className="text-[11px] text-sakura-plum/80 dark:text-sakura-blush/80 leading-relaxed mb-3">
+            Har <b>5 ta do'st</b> taklif qilganingizda, hohlagan 1 dona tovaringizga <b>20% CHEGIRMA</b> kuponini olasiz!
+          </p>
+
+          {/* Progress bar */}
+          <div className="mb-3 p-2.5 rounded-2xl bg-white/80 dark:bg-sakura-darkcard/80 border border-sakura-pink/20">
+            <div className="flex justify-between text-[11px] font-bold mb-1">
+              <span className="text-sakura-plum dark:text-white">
+                Keyingi kupongacha: {referralStats.friends_needed_for_next} ta do'st
+              </span>
+              <span className="text-sakura-rose font-mono">
+                {referralStats.confirmed_count % 5} / 5
+              </span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-sakura-pink/20 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-sakura-pink to-sakura-rose transition-all duration-500 rounded-full"
+                style={{ width: `${((referralStats.confirmed_count % 5) / 5) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Available and Locked coupons */}
+          {referralStats.available_coupons && referralStats.available_coupons.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {/* Active Coupons */}
+              {referralStats.available_coupons.filter((cp) => cp.is_valid && !cp.is_used).length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-sakura-darkrose dark:text-sakura-pink uppercase">
+                    🎟 Faol 20% kuponlaringiz:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {referralStats.available_coupons
+                      .filter((cp) => cp.is_valid && !cp.is_used)
+                      .map((cp) => (
+                        <span
+                          key={cp.id}
+                          className="px-2 py-1 rounded-xl bg-sakura-rose text-white font-mono font-bold text-[11px] shadow-xs"
+                        >
+                          {cp.code} (-20%)
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Locked Coupons (when invited friends left channel) */}
+              {referralStats.available_coupons.filter((cp) => !cp.is_valid && !cp.is_used).length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase">
+                    🔒 Qulflangan kuponlar:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {referralStats.available_coupons
+                      .filter((cp) => !cp.is_valid && !cp.is_used)
+                      .map((cp) => (
+                        <span
+                          key={cp.id}
+                          className="px-2 py-1 rounded-xl bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono text-[11px] border border-gray-300 dark:border-gray-700"
+                        >
+                          {cp.code} (yana {Math.max(1, cp.milestone - referralStats.confirmed_count)} ta do'st kerak)
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Link action buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(referralStats.referral_link);
+                setCopiedLink(true);
+                haptic.notification('success');
+                setTimeout(() => setCopiedLink(false), 2000);
+              }}
+              className="flex-1 py-2 px-3 rounded-xl bg-white dark:bg-sakura-darkcard text-sakura-plum dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-sakura-pink/40 active:scale-95 transition-transform"
+            >
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-sakura-rose" />}
+              <span>{copiedLink ? "Nusxalandi" : "Havolani nusxalash"}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                const text = `🌸 Moonlight Chinese Shop go'zal do'koniga taklif qilaman! ✨\nKanalga a'zo bo'ling: ${referralStats.referral_link}`;
+                openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(referralStats.referral_link)}&text=${encodeURIComponent(text)}`);
+              }}
+              className="py-2 px-3 rounded-xl bg-gradient-to-r from-sakura-rose to-sakura-darkrose text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sakura active:scale-95 transition-transform"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Ulashish</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Language Selection Card */}
       <div className="p-4 rounded-3xl bg-white/90 dark:bg-sakura-darkcard/90 backdrop-blur-md border border-sakura-pink/20 shadow-sakura-sm mb-3">

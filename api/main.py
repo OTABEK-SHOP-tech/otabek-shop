@@ -22,6 +22,7 @@ from api.routes import (
     media,
     admin,
     contest,
+    referrals,
 )
 from bot.bot import setup_routers, setup_bot_commands, notify_admins_of_error
 from bot.loader import bot, dp
@@ -152,6 +153,7 @@ app.include_router(media.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(contest.router, prefix="/api")
 app.include_router(contest.admin_router, prefix="/api")
+app.include_router(referrals.router, prefix="/api")
 
 
 # Health check

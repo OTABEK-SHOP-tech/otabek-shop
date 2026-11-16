@@ -28,7 +28,7 @@ from api.services.formatters import build_channel_caption, format_price, strip_p
 from bot.loader import bot
 from bot.services.broadcaster import run_broadcast
 from bot.services.channel_post import post_product_to_channel
-from db.models import Product, Category, Order, Review, User, Admin, Wishlist, Setting
+from db.models import Product, Category, Order, Review, User, Admin, Wishlist, Setting, ReferralCoupon, PromoCode
 from db.session import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -364,6 +364,27 @@ async def admin_update_order_status(
             u_obj = res_u.scalars().first()
             if u_obj:
                 u_obj.cashback_balance += order.cashback_used
+
+        # Reactivate/refund referral coupon if used on this cancelled order
+        if order.promo_code:
+            rc_res = await db.execute(
+                select(ReferralCoupon).where(
+                    (ReferralCoupon.order_id == order.id) | (ReferralCoupon.code == order.promo_code)
+                )
+            )
+            rc_obj = rc_res.scalars().first()
+            if rc_obj:
+                rc_obj.is_used = False
+                rc_obj.used_at = None
+                rc_obj.order_id = None
+                rc_obj.discount_amount = 0
+
+            # Also reactivate PromoCode
+            pr_res = await db.execute(select(PromoCode).where(PromoCode.code == order.promo_code))
+            pr_obj = pr_res.scalars().first()
+            if pr_obj:
+                pr_obj.used_count = max(0, pr_obj.used_count - 1)
+                pr_obj.is_active = True
 
         await db.commit()
         await db.refresh(order)
