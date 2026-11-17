@@ -33,9 +33,18 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
         ch_setting = res_ch.scalars().first()
         channel_id = (ch_setting.value or "").strip() if ch_setting else ""
 
-        # Default to official Moonlight channel if not configured
-        if not channel_id:
-            channel_id = "@moonlight_chinese_shop"
+        # Fail-safe protection: if channel_id is empty or matches the discussion group (-1003565030513),
+        # force fallback to the official broadcast channel!
+        res_chat = await session.execute(select(Setting).where(Setting.key == "chat_id"))
+        chat_setting = res_chat.scalars().first()
+        group_id = (chat_setting.value or "").strip() if chat_setting else "-1003565030513"
+
+        if not channel_id or channel_id == group_id or channel_id == "-1003565030513":
+            logger.warning(
+                f"channel_id ({channel_id}) was invalid or pointing to group ({group_id}). "
+                f"Falling back to official channel -1004378811161 (@moonlight_chinese_shop)"
+            )
+            channel_id = "-1004378811161"
 
         # Get delivery terms & contact
         res_settings = await session.execute(select(Setting))

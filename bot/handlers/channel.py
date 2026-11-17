@@ -61,8 +61,8 @@ async def link_channel_by_username(session: AsyncSession, tg_bot: Bot, user_id: 
         logger.warning(f"Channel link lookup failed for {ref}: {e}")
         return False, f"❌ {escape(ref)} topilmadi yoki bot u yerda yo'q. Botni kanalga admin qilib, qayta yuboring."
 
-    if chat.type not in ["channel", "supergroup"]:
-        return False, "❌ Bu kanal emas."
+    if chat.type != "channel":
+        return False, "❌ Bu kanal emas. Faqat Telegram kanallarni ulash mumkin (guruhlarni emas)."
     if bot_member.status != ChatMemberStatus.ADMINISTRATOR or (
         chat.type == "channel" and not getattr(bot_member, "can_post_messages", False)
     ):
@@ -88,7 +88,19 @@ async def handle_bot_chat_member_update(event: ChatMemberUpdated):
     Detects when the bot is added as administrator to a channel, or removed.
     """
     chat = event.chat
-    if chat.type not in ["channel", "supergroup"]:
+    # Only broadcast channels can be linked as channel_id!
+    # Groups/supergroups are discussion chats (chat_id), never channel_id.
+    if chat.type != "channel":
+        if chat.type in ["group", "supergroup"] and event.new_chat_member.status == ChatMemberStatus.ADMINISTRATOR:
+            logger.info(f"Bot added to discussion group {chat.title} ({chat.id}). Updating chat_id.")
+            async with async_session_factory() as session:
+                res_chat = await session.execute(select(Setting).where(Setting.key == "chat_id"))
+                s = res_chat.scalars().first()
+                if s:
+                    s.value = str(chat.id)
+                else:
+                    session.add(Setting(key="chat_id", value=str(chat.id)))
+                await session.commit()
         return
 
     from_user = event.from_user
