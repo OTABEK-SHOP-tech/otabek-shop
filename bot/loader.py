@@ -13,9 +13,10 @@ bot: Optional[Bot] = None
 dp: Optional[Dispatcher] = None
 
 try:
-    if settings.BOT_TOKEN and settings.BOT_TOKEN != "mock_bot_token_for_tests":
+    raw_token = (settings.BOT_TOKEN or "").strip()
+    if raw_token and raw_token != "mock_bot_token_for_tests":
         bot = Bot(
-            token=settings.BOT_TOKEN,
+            token=raw_token,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
         dp = Dispatcher(storage=MemoryStorage())

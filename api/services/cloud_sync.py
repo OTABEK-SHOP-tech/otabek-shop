@@ -148,7 +148,7 @@ async def run_render_keepalive_worker() -> None:
     logger.info(f"Starting Render keepalive worker for {base_url}...")
     while True:
         try:
-            await asyncio.sleep(480)  # 8 minutes
+            await asyncio.sleep(240)  # Ping every 4 minutes to prevent Render free instance sleeping
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.get(f"{base_url}/api/settings")
                 logger.info(f"Render keepalive ping: {res.status_code}")

@@ -45,7 +45,18 @@ bot_polling_task = None
 contest_scheduler_task = None
 cart_recovery_task = None
 keepalive_task = None
-bot_runtime = BotRuntime(bot, dp, mode="polling" if settings.BOT_POLLING_ENABLED else "disabled")
+
+def should_run_bot_polling() -> bool:
+    is_render = bool(
+        os.getenv("RENDER") == "true"
+        or os.getenv("RENDER_SERVICE_ID")
+        or os.getenv("RENDER_INSTANCE_ID")
+    )
+    if is_render:
+        return True
+    return bool(settings.BOT_POLLING_ENABLED)
+
+bot_runtime = BotRuntime(bot, dp, mode="polling" if should_run_bot_polling() else "disabled")
 
 
 @asynccontextmanager
@@ -71,7 +82,8 @@ async def lifespan(app: FastAPI):
     # 2. Start Bot Polling, Contest Scheduler and Cloud KeepAlive
     global bot_polling_task, contest_scheduler_task, cart_recovery_task, keepalive_task
     keepalive_task = asyncio.create_task(run_render_keepalive_worker())
-    if bot and dp and settings.BOT_POLLING_ENABLED:
+    should_poll = should_run_bot_polling() and (bot is not None and dp is not None)
+    if should_poll:
         if not dp.sub_routers:
             setup_routers(dp)
         await setup_bot_commands(bot)
@@ -167,6 +179,12 @@ async def liveness_check():
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     bot_state = bot_runtime.health()
+    bot_state["bot_configured"] = bool(bot is not None)
+    bot_state["is_render"] = bool(
+        os.getenv("RENDER") == "true"
+        or os.getenv("RENDER_SERVICE_ID")
+        or os.getenv("RENDER_INSTANCE_ID")
+    )
     return JSONResponse(
         status_code=200 if bot_state["healthy"] else 503,
         content={"status": "ok" if bot_state["healthy"] else "degraded",
