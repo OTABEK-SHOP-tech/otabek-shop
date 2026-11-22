@@ -24,15 +24,42 @@ from api.schemas import (
     AdminStatsOut,
     BroadcastCreate,
 )
-from api.services.formatters import build_channel_caption, format_price, strip_private_pricing_data
+from api.services.formatters import build_channel_caption, format_price, format_cargo_stage, strip_private_pricing_data
 from bot.loader import bot
 from bot.services.broadcaster import run_broadcast
 from bot.services.channel_post import post_product_to_channel
-from db.models import Product, Category, Order, Review, User, Admin, Wishlist, Setting, ReferralCoupon, PromoCode
+from db.models import Product, Category, Order, Review, User, Admin, Wishlist, Setting, Referral, ReferralCoupon, PromoCode
 from db.session import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
+
+PROTECTED_OWNER_SETTING_KEYS = {"owner_invite_code", "owner_claimed_at"}
+NUMERIC_SETTING_KEYS = {"cargo_rate", "cargo_rate_avia", "cargo_rate_avto", "yuan_rate", "usd_rate", "rub_rate"}
+
+
+def _order_to_out(o: Order) -> OrderOut:
+    return OrderOut(
+        id=o.id,
+        user_id=o.user_id,
+        customer_name=o.customer_name,
+        customer_username=o.customer_username,
+        items_snapshot=o.items_snapshot,
+        total=o.total,
+        formatted_total=format_price(o.total),
+        estimated_cargo=o.estimated_cargo,
+        formatted_cargo=format_price(o.estimated_cargo),
+        status=o.status,
+        receipt_photo_id=o.receipt_photo_id,
+        promo_code=o.promo_code,
+        discount_amount=o.discount_amount or 0,
+        formatted_discount_amount=format_price(o.discount_amount) if o.discount_amount else "",
+        cashback_used=o.cashback_used or 0,
+        formatted_cashback_used=format_price(o.cashback_used or 0),
+        cargo_stage=o.cargo_stage or "china_warehouse",
+        formatted_cargo_stage=format_cargo_stage(o.cargo_stage or "china_warehouse"),
+        created_at=o.created_at,
+    )
 
 
 # ==================== PRODUCTS ====================
@@ -246,23 +273,7 @@ async def admin_list_orders(
 
     res = await db.execute(query)
     orders = res.scalars().all()
-    return [
-        OrderOut(
-            id=o.id,
-            user_id=o.user_id,
-            customer_name=o.customer_name,
-            customer_username=o.customer_username,
-            items_snapshot=o.items_snapshot,
-            total=o.total,
-            formatted_total=format_price(o.total),
-            estimated_cargo=o.estimated_cargo,
-            formatted_cargo=format_price(o.estimated_cargo),
-            status=o.status,
-            receipt_photo_id=o.receipt_photo_id,
-            created_at=o.created_at,
-        )
-        for o in orders
-    ]
+    return [_order_to_out(o) for o in orders]
 
 
 @router.patch("/orders/{order_id}/status", response_model=OrderOut)
@@ -278,6 +289,16 @@ async def admin_update_order_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Buyurtma topilmadi")
 
     old_status = order.status
+    if old_status == "accepted" and payload.status != "accepted":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Qabul qilingan buyurtma holatini o'zgartirib bo'lmaydi",
+        )
+    if old_status == "cancelled" and payload.status != "cancelled":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bekor qilingan buyurtma holatini o'zgartirib bo'lmaydi",
+        )
     order.status = payload.status
 
     earned_cashback = 0
@@ -369,22 +390,36 @@ async def admin_update_order_status(
         if order.promo_code:
             rc_res = await db.execute(
                 select(ReferralCoupon).where(
-                    (ReferralCoupon.order_id == order.id) | (ReferralCoupon.code == order.promo_code)
+                    (ReferralCoupon.order_id == order.id)
+                    | ((ReferralCoupon.code == order.promo_code) & (ReferralCoupon.user_id == order.user_id))
                 )
             )
             rc_obj = rc_res.scalars().first()
+            should_reactivate_promo = True
             if rc_obj:
                 rc_obj.is_used = False
                 rc_obj.used_at = None
                 rc_obj.order_id = None
+                rc_obj.product_id = None
                 rc_obj.discount_amount = 0
 
-            # Also reactivate PromoCode
+                confirmed_cnt = (
+                    await db.execute(
+                        select(func.count(Referral.id)).where(
+                            Referral.referrer_id == rc_obj.user_id,
+                            Referral.status == "confirmed",
+                        )
+                    )
+                ).scalar() or 0
+                should_reactivate_promo = confirmed_cnt >= rc_obj.milestone
+
+            # Also update PromoCode
             pr_res = await db.execute(select(PromoCode).where(PromoCode.code == order.promo_code))
             pr_obj = pr_res.scalars().first()
             if pr_obj:
                 pr_obj.used_count = max(0, pr_obj.used_count - 1)
-                pr_obj.is_active = True
+                if should_reactivate_promo and (not pr_obj.max_uses or pr_obj.used_count < pr_obj.max_uses):
+                    pr_obj.is_active = True
 
         await db.commit()
         await db.refresh(order)
@@ -439,20 +474,7 @@ async def admin_update_order_status(
         await db.commit()
         await db.refresh(order)
 
-    return OrderOut(
-        id=order.id,
-        user_id=order.user_id,
-        customer_name=order.customer_name,
-        customer_username=order.customer_username,
-        items_snapshot=order.items_snapshot,
-        total=order.total,
-        formatted_total=format_price(order.total),
-        estimated_cargo=order.estimated_cargo,
-        formatted_cargo=format_price(order.estimated_cargo),
-        status=order.status,
-        receipt_photo_id=order.receipt_photo_id,
-        created_at=order.created_at,
-    )
+    return _order_to_out(order)
 
 
 # ==================== REVIEWS ====================
@@ -616,7 +638,7 @@ async def admin_get_all_settings(
     db: AsyncSession = Depends(get_db),
 ):
     res = await db.execute(select(Setting))
-    return {s.key: s.value for s in res.scalars().all()}
+    return {s.key: s.value for s in res.scalars().all() if s.key not in PROTECTED_OWNER_SETTING_KEYS}
 
 
 @router.post("/settings", response_model=Dict[str, Any])
@@ -625,7 +647,44 @@ async def admin_update_settings(
     admin: TelegramUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    for k in payload:
+        if k in PROTECTED_OWNER_SETTING_KEYS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bu tizim sozlamasini o'zgartirish taqiqlangan",
+            )
+
+    if "channel_id" in payload:
+        caller = (await db.execute(select(Admin).where(Admin.telegram_id == admin.id))).scalars().first()
+        is_owner = (caller is not None and caller.role == "owner") or (
+            settings.DEV_ADMIN_ID and admin.id == settings.DEV_ADMIN_ID
+        )
+        if not is_owner:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Faqat do'kon egasi kanal ID sini o'zgartira oladi",
+            )
+        new_ch_val = str(payload["channel_id"] or "").strip()
+        chat_row = (await db.execute(select(Setting).where(Setting.key == "chat_id"))).scalars().first()
+        current_chat = (chat_row.value or "").strip() if chat_row else "-1003565030513"
+        if new_ch_val and (new_ch_val == current_chat or new_ch_val == "-1003565030513"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Guruh ID sini kanal sifatida saqlab bo'lmaydi",
+            )
+
     for k, v in payload.items():
+        if k in NUMERIC_SETTING_KEYS:
+            try:
+                num = int(str(v).strip())
+                if num <= 0:
+                    raise ValueError("must be positive")
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"'{k}' uchun musbat raqam kiriting",
+                )
+
         res = await db.execute(select(Setting).where(Setting.key == k))
         setting = res.scalars().first()
         if setting:

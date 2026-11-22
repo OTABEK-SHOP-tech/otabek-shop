@@ -9,6 +9,14 @@ from db.session import get_db
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
+def _safe_int(val: Any, default: int) -> int:
+    try:
+        parsed = int(str(val).strip())
+        return parsed if parsed > 0 else default
+    except (ValueError, TypeError):
+        return default
+
+
 @router.get("", response_model=Dict[str, Any])
 async def get_public_settings(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Setting))
@@ -16,9 +24,9 @@ async def get_public_settings(db: AsyncSession = Depends(get_db)):
     data = {s.key: s.value for s in rows}
 
     return {
-        "cargo_rate": int(data.get("cargo_rate", 10000)),
-        "cargo_rate_avto": int(data.get("cargo_rate_avto", 10000)),
-        "cargo_rate_avia": int(data.get("cargo_rate_avia", 14000)),
+        "cargo_rate": _safe_int(data.get("cargo_rate"), 10000),
+        "cargo_rate_avto": _safe_int(data.get("cargo_rate_avto"), 10000),
+        "cargo_rate_avia": _safe_int(data.get("cargo_rate_avia"), 14000),
         "delivery_days_avto": data.get("delivery_days_avto", "14–18 kun"),
         "delivery_days_avia": data.get("delivery_days_avia", "7–9 kun"),
         "delivery_days": data.get("delivery_days", "7–18 kun"),

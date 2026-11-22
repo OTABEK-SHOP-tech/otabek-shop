@@ -1,10 +1,9 @@
 import logging
-from aiogram import Router, F
+from aiogram import Router
 from aiogram.types import ChatMemberUpdated
-from aiogram.filters.chat_member_updated import ChatMemberUpdatedFilter, KICKED, LEFT, RESTRICTED, MEMBER, ADMINISTRATOR
 from sqlalchemy import select
 
-from db.models import Admin, Contest, Setting
+from db.models import Admin, Contest
 from db.session import async_session_factory
 from bot.services.contest_service import revoke_referral_on_leave, get_channel_info
 
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 router = Router(name="channel_member")
 
 
-@router.chat_member(ChatMemberUpdatedFilter(member_status_changed=True))
+@router.chat_member()
 async def handle_channel_member_updated(event: ChatMemberUpdated):
     """
     Tracks channel member status changes:
@@ -74,7 +73,9 @@ async def handle_channel_member_updated(event: ChatMemberUpdated):
         was_member = old_status in ("member", "administrator", "creator") or (
             old_status == "restricted" and getattr(event.old_chat_member, "is_member", True)
         )
-        is_left = new_status in ("left", "kicked")
+        is_left = new_status in ("left", "kicked") or (
+            new_status == "restricted" and not getattr(event.new_chat_member, "is_member", True)
+        )
         is_joined = new_status in ("member", "administrator", "creator") or (
             new_status == "restricted" and getattr(event.new_chat_member, "is_member", True)
         )
@@ -105,4 +106,5 @@ async def handle_channel_member_updated(event: ChatMemberUpdated):
                     invitee_id=user.id,
                     referrer_id=pending_ref.referrer_id,
                     bot_username=bot_me.username,
+                    bypass_throttle=True,
                 )

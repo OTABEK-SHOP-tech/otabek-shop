@@ -27,6 +27,7 @@ from bot.services.contest_service import (
     final_recheck_contest,
     approve_and_announce_winners,
     get_suspicious_activity,
+    ensure_utc,
 )
 from db.models import Contest, ContestReferral, User, utcnow
 from db.session import get_db
@@ -60,7 +61,7 @@ async def get_active_contest_info(db: AsyncSession = Depends(get_db)) -> Dict[st
             created_at=active.created_at,
             ends_at=active.ends_at,
             formatted_ends_at=format_tashkent_datetime(active.ends_at),
-            is_active=(active.status == "active" and active.ends_at > utcnow()),
+            is_active=(active.status == "active" and ensure_utc(active.ends_at) > utcnow()),
             channel_url=channel_url,
             winners_snapshot=active.winners_snapshot,
             total_subscribers_gained=active.total_subscribers_gained,
@@ -111,7 +112,7 @@ async def create_contest(
             detail="Faol konkurs allaqachon mavjud! Yangi boshlashdan oldin eskisini yakunlang.",
         )
 
-    if payload.ends_at <= utcnow():
+    if ensure_utc(payload.ends_at) <= utcnow():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tugash vaqti kelajakda bo'lishi kerak.",
@@ -196,11 +197,33 @@ async def update_contest_prizes(
     channel_id, channel_url = await get_channel_info(db)
     if channel_id and active.channel_message_id and bot:
         text = build_contest_announcement_text(active)
+        bot_username = "moonlight_chinese_bot"
+        try:
+            bot_me = await bot.get_me()
+            if bot_me and bot_me.username:
+                bot_username = bot_me.username.lstrip("@")
+        except Exception:
+            pass
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🎁 Qatnashish", url=f"https://t.me/{bot_username}?start=konkurs")]
+            ]
+        )
         try:
             if active.photo_file_id:
-                await bot.edit_message_caption(chat_id=channel_id, message_id=active.channel_message_id, caption=text)
+                await bot.edit_message_caption(
+                    chat_id=channel_id,
+                    message_id=active.channel_message_id,
+                    caption=text,
+                    reply_markup=markup,
+                )
             else:
-                await bot.edit_message_text(chat_id=channel_id, message_id=active.channel_message_id, text=text)
+                await bot.edit_message_text(
+                    chat_id=channel_id,
+                    message_id=active.channel_message_id,
+                    text=text,
+                    reply_markup=markup,
+                )
         except Exception as e:
             logger.warning(f"Could not edit channel announcement: {e}")
 
@@ -235,7 +258,7 @@ async def extend_contest(
     if payload.additional_days:
         active.ends_at = active.ends_at + timedelta(days=payload.additional_days)
     elif payload.new_ends_at:
-        if payload.new_ends_at <= utcnow():
+        if ensure_utc(payload.new_ends_at) <= utcnow():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tugash vaqti kelajakda bo'lishi kerak.")
         active.ends_at = payload.new_ends_at
 

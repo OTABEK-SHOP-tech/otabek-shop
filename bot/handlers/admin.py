@@ -8,7 +8,7 @@ from pathlib import Path
 
 from aiogram import Router, F
 from datetime import datetime, timezone
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -23,7 +23,9 @@ from aiogram.types import (
     FSInputFile,
     WebAppInfo,
 )
-from sqlalchemy import select, func, desc, delete
+from sqlalchemy import select, func, desc, delete, update
+
+_BOOST_CMD_RE = re.compile(r"(?i)(?:^|\s)/boost(?:@\w+)?(?=\s|$)\s*")
 
 import asyncio
 from api.config import settings
@@ -195,8 +197,12 @@ async def handle_direct_setup_code(message: Message, state: FSMContext):
 @router.message(F.text == "❌ Bekor qilish")
 async def handle_cancel_wizard(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Jarayon bekor qilindi.", reply_markup=get_main_reply_keyboard())
-    await message.answer("👑 Admin menyusi:", reply_markup=get_admin_main_keyboard())
+    user_id = message.from_user.id if message.from_user else 0
+    if await is_user_admin(user_id):
+        await message.answer("❌ Jarayon bekor qilindi.", reply_markup=get_main_reply_keyboard())
+        await message.answer("👑 Admin menyusi:", reply_markup=get_admin_main_keyboard())
+    else:
+        await message.answer("✅ Amaliyot bekor qilindi 🌸", reply_markup=get_main_reply_keyboard())
 
 
 # Boost command
@@ -644,7 +650,8 @@ async def process_product_import(
             photos = embed_data["photos"] or photos
             source_label = f"Havola orqali import (@{link_info['chat_ref']}/{link_info['message_id']})"
 
-        # 2. Parse product channel post with 25%-35% profit margin
+        # 2. Defensively strip /boost command & parse product channel post with 25%-35% profit margin
+        raw_text = _BOOST_CMD_RE.sub(" ", raw_text or "").strip()
         parsed = parse_channel_post(raw_text, apply_margin=True)
         source_price = parsed["source_price"]
         retail_price = parsed["retail_price"]
@@ -654,6 +661,11 @@ async def process_product_import(
         cargo_rate = parsed.get("cargo_rate", 12000)
         cat_slug = parsed.get("category") or ""
         title = parsed.get("title") or (f"{cat_slug.capitalize()} 🌸" if cat_slug else "Mahsulot 🌸")
+        has_custom_title = bool(
+            parsed.get("title")
+            and parsed.get("title", "").strip().lower() != "boost"
+            and parsed.get("title") not in (f"{cat_slug.capitalize()} 🌸", "Mahsulot 🌸")
+        )
 
         spec_photo_refs: set = set()
         ocr_spec_photo = None
@@ -741,9 +753,14 @@ async def process_product_import(
                                 for c in v_colors:
                                     if c not in colors:
                                         colors.append(c)
-                        # Fill missing or generic title
-                        if (not parsed.get("title") or title in (f"{cat_slug.capitalize()} 🌸", "Mahsulot 🌸")) and vision_res.get("title"):
+                        # Fill missing or placeholder title (including accidental '/boost' title)
+                        if (
+                            not has_custom_title
+                            or title.strip().lower() == "boost"
+                            or (parsed.get("title") or "").strip().lower() == "boost"
+                        ) and vision_res.get("title"):
                             title = vision_res["title"]
+                            has_custom_title = True
                         # Fill category if missing from caption or generic
                         if (not parsed.get("category") or cat_slug in ("kiyim", "jempir", "")) and vision_res.get("category"):
                             cat_slug = vision_res["category"]
@@ -1007,7 +1024,26 @@ async def handle_importable_post(
                 await process_wizard_title(message, state)
                 return
             elif current_state == ProductWizard.category.state:
-                await process_wizard_category(message, state)
+                if text_check in ("❌ Bekor qilish", "/cancel"):
+                    await state.clear()
+                    await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
+                    return
+                async with async_session_factory() as session:
+                    res = await session.execute(select(Category).order_by(Category.sort_order))
+                    categories = res.scalars().all()
+                cat_buttons = []
+                cat_row = []
+                for c in categories:
+                    cat_row.append(InlineKeyboardButton(text=f"#{c.slug} {c.emoji}", callback_data=f"cat_pick_{c.slug}"))
+                    if len(cat_row) == 2:
+                        cat_buttons.append(cat_row)
+                        cat_row = []
+                if cat_row:
+                    cat_buttons.append(cat_row)
+                await message.answer(
+                    "🏷️ <b>Iltimos, quyidagi tugmalardan kategoriyani tanlang:</b>",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=cat_buttons),
+                )
                 return
             elif current_state == ProductWizard.weight.state:
                 await process_wizard_weight(message, state)
@@ -1156,7 +1192,7 @@ async def handle_importable_post(
         source_label = "Sehrli import (Albom)" if is_album else "Sehrli import"
         if is_boost_call or "/boost" in album_text.lower():
             source_label = "AI Vision Boost (Albom) 🚀" if is_album else "AI Vision Boost 🚀"
-            album_text = re.sub(r"(?i)\b/boost\b\s*", "", album_text).strip()
+            album_text = _BOOST_CMD_RE.sub(" ", album_text).strip()
 
         await process_product_import(
             message=buf["message"],
@@ -1185,7 +1221,7 @@ async def handle_importable_post(
     source_label = "Kanaldan forward import" if is_fwd else "Sehrli import"
     if is_boost_call or "/boost" in raw_text.lower():
         source_label = "AI Vision Boost 🚀"
-        raw_text = re.sub(r"(?i)\b/boost\b\s*", "", raw_text).strip()
+        raw_text = _BOOST_CMD_RE.sub(" ", raw_text).strip()
 
     await process_product_import(
         message=message,
@@ -1534,6 +1570,25 @@ async def process_wizard_sizes(message: Message, state: FSMContext):
         await state.clear()
         await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
         return
+    if message.text == "⬅️ Orqaga":
+        async with async_session_factory() as session:
+            res = await session.execute(select(Category).order_by(Category.sort_order))
+            categories = res.scalars().all()
+        buttons = []
+        row = []
+        for c in categories:
+            row.append(InlineKeyboardButton(text=f"#{c.slug} {c.emoji}", callback_data=f"cat_pick_{c.slug}"))
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+        await state.set_state(ProductWizard.category)
+        await message.answer(
+            "🏷️ <b>4/8 qadam:</b> Kategoriyani tanlang:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+        return
 
     text = message.text.strip()
     if "standart" in text.lower() or text in ["O'tkazib yuborish ⏭️", "Standart 🌸"]:
@@ -1587,6 +1642,19 @@ async def process_wizard_colors(message: Message, state: FSMContext):
         await state.clear()
         await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
         return
+    if message.text == "⬅️ Orqaga":
+        await state.set_state(ProductWizard.sizes)
+        await message.answer(
+            "📏 <b>5/8 qadam:</b> O'lchamlarni kiriting (vergul bilan ajratib, masalan: <i>S, M, L</i>) yoki o'tkazib yuboring:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="O'tkazib yuborish ⏭️")],
+                    [KeyboardButton(text="⬅️ Orqaga"), KeyboardButton(text="❌ Bekor qilish")],
+                ],
+                resize_keyboard=True,
+            ),
+        )
+        return
 
     text = message.text.strip()
     if "standart" in text.lower() or "rasmda" in text.lower() or text in ["O'tkazib yuborish ⏭️", "Rasmda ko'rsatilgan (Standart) 🌸"]:
@@ -1601,7 +1669,7 @@ async def process_wizard_colors(message: Message, state: FSMContext):
     data = await state.get_data()
 
     # Check if in import/screenshot flow:
-    if data.get("source_label") or data.get("photos"):
+    if data.get("source_label"):
         await show_product_import_summary(message, state)
         return
 
@@ -1621,8 +1689,26 @@ async def process_wizard_colors(message: Message, state: FSMContext):
 
 @router.message(ProductWizard.weight, F.text)
 async def process_wizard_weight(message: Message, state: FSMContext):
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
+        return
+    if message.text == "⬅️ Orqaga":
+        await state.set_state(ProductWizard.colors)
+        await message.answer(
+            "🎨 <b>6/8 qadam:</b> Ranglarni kiriting (vergul bilan ajratib, masalan: <i>Pushti 🌸, Oq 🤍</i>) yoki o'tkazib yuboring:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="O'tkazib yuborish ⏭️")],
+                    [KeyboardButton(text="⬅️ Orqaga"), KeyboardButton(text="❌ Bekor qilish")],
+                ],
+                resize_keyboard=True,
+            ),
+        )
+        return
+
     weight_grams = None
-    if message.text != "O'tkazib yuborish ⏭️" and message.text != "⬅️ Orqaga":
+    if message.text != "O'tkazib yuborish ⏭️":
         raw = re.sub(r"\D", "", message.text)
         if raw:
             weight_grams = int(raw)
@@ -1643,8 +1729,26 @@ async def process_wizard_weight(message: Message, state: FSMContext):
 
 @router.message(ProductWizard.description, F.text)
 async def process_wizard_description(message: Message, state: FSMContext):
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("Bekor qilindi.", reply_markup=ReplyKeyboardRemove())
+        return
+    if message.text == "⬅️ Orqaga":
+        await state.set_state(ProductWizard.weight)
+        await message.answer(
+            "⚖️ <b>7/8 qadam:</b> Mahsulot og'irligini grammda kiriting (kargoni hisoblash uchun, masalan: <i>350</i>) yoki o'tkazib yuboring:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="O'tkazib yuborish ⏭️")],
+                    [KeyboardButton(text="⬅️ Orqaga"), KeyboardButton(text="❌ Bekor qilish")],
+                ],
+                resize_keyboard=True,
+            ),
+        )
+        return
+
     desc_val = ""
-    if message.text != "O'tkazib yuborish ⏭️" and message.text != "⬅️ Orqaga":
+    if message.text != "O'tkazib yuborish ⏭️":
         desc_val = message.text.strip()
 
     await state.update_data(description=desc_val)
@@ -1798,7 +1902,7 @@ async def handle_post_channel_now(callback: CallbackQuery):
         )
     else:
         await callback.message.edit_text(
-            f"⚠️ <b>Kanalga joylashda xatolik:</b>\n{result.get('error')}\n\n"
+            f"⚠️ <b>Kanalga joylashda xatolik:</b>\n{escape(str(result.get('error') or ''))}\n\n"
             f"Bot kanalingizda administrator ekanligini va ruxsatlari borligini tekshiring."
         )
     await callback.answer()
@@ -1839,9 +1943,9 @@ async def handle_list_products(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("admin_prod_manage_"))
-async def handle_manage_single_product(callback: CallbackQuery):
-    prod_id = int(callback.data.replace("admin_prod_manage_", ""))
+async def _render_manage_single_product(
+    callback: CallbackQuery, prod_id: int, alert_text: Optional[str] = None
+) -> None:
     async with async_session_factory() as session:
         res = await session.execute(select(Product).where(Product.id == prod_id))
         p = res.scalars().first()
@@ -1891,7 +1995,13 @@ async def handle_manage_single_product(callback: CallbackQuery):
     )
 
     await callback.message.edit_text(text, reply_markup=markup)
-    await callback.answer()
+    await callback.answer(alert_text)
+
+
+@router.callback_query(F.data.startswith("admin_prod_manage_"))
+async def handle_manage_single_product(callback: CallbackQuery):
+    prod_id = int(callback.data.rsplit("_", 1)[-1])
+    await _render_manage_single_product(callback, prod_id)
 
 
 @router.callback_query(F.data.startswith("admin_toggle_stock_"))
@@ -1903,7 +2013,35 @@ async def handle_toggle_stock(callback: CallbackQuery):
         if p:
             p.in_stock = not p.in_stock
             await session.commit()
-    await handle_manage_single_product(callback)
+    await _render_manage_single_product(callback, prod_id)
+
+
+@router.callback_query(F.data.startswith("admin_toggle_badges_"))
+async def handle_toggle_badges(callback: CallbackQuery):
+    if not await is_user_admin(callback.from_user.id):
+        await callback.answer("⛔ Faqat adminlar uchun!", show_alert=True)
+        return
+    prod_id = int(callback.data.replace("admin_toggle_badges_", ""))
+    badge_msg = "Yangilandi"
+    async with async_session_factory() as session:
+        res = await session.execute(select(Product).where(Product.id == prod_id))
+        p = res.scalars().first()
+        if not p:
+            await callback.answer("Mahsulot topilmadi", show_alert=True)
+            return
+        # Cycle badge states cleanly: (Hit=F, New=T) -> (Hit=T, New=T) -> (Hit=T, New=F) -> (Hit=F, New=F)
+        state_pair = (bool(p.is_hit), bool(p.is_new))
+        transitions = {
+            (False, True): (True, True, "🔥 Hit + 🆕 Yangi yoqildi"),
+            (True, True): (True, False, "🔥 Faqat Hit yoqildi"),
+            (True, False): (False, False, "Belgilar o'chirildi"),
+            (False, False): (False, True, "🆕 Yangi yoqildi"),
+        }
+        new_hit, new_new, badge_msg = transitions.get(state_pair, (True, False, "🔥 Hit yoqildi"))
+        p.is_hit = new_hit
+        p.is_new = new_new
+        await session.commit()
+    await _render_manage_single_product(callback, prod_id, alert_text=badge_msg)
 
 
 @router.callback_query(F.data.startswith("admin_confirm_delete_prod_"))
@@ -1926,7 +2064,13 @@ async def handle_admin_stats(callback: CallbackQuery):
     async with async_session_factory() as session:
         total_users = (await session.execute(select(func.count(User.telegram_id)))).scalar() or 0
         total_orders = (await session.execute(select(func.count(Order.id)))).scalar() or 0
-        new_orders = (await session.execute(select(func.count(Order.id)).where(Order.status == "new"))).scalar() or 0
+        new_orders = (
+            await session.execute(
+                select(func.count(Order.id)).where(
+                    Order.status.in_(["new", "awaiting_receipt", "pending_approval"])
+                )
+            )
+        ).scalar() or 0
         total_prods = (await session.execute(select(func.count(Product.id)))).scalar() or 0
         in_stock_prods = (await session.execute(select(func.count(Product.id)).where(Product.in_stock == True))).scalar() or 0
 
@@ -1958,7 +2102,7 @@ async def handle_admin_settings_menu(callback: CallbackQuery):
         admins = res.scalars().all()
         res_ch = await session.execute(select(Setting).where(Setting.key == "channel_id"))
         ch = res_ch.scalars().first()
-        channel_status = f"Uланган ({ch.value}) ✅" if (ch and ch.value) else "Ulanmagan ❌"
+        channel_status = f"Ulangan ({escape(str(ch.value))}) ✅" if (ch and ch.value) else "Ulanmagan ❌"
 
     admin_lines = []
     for a in admins:
@@ -2063,14 +2207,16 @@ async def process_new_owner_forward(message: Message, state: FSMContext):
                 new_owner_username = u.username
 
     if not new_owner_id:
+        async with async_session_factory() as session:
+            invite_token = await create_owner_invite(session)
         bot_info = await message.bot.get_me() if message.bot else None
         b_user = bot_info.username if bot_info and bot_info.username else "moonlight_chinese_bot"
-        invite_link = f"https://t.me/{b_user}?start=claim_{settings.OWNER_SETUP_CODE}"
+        invite_link = f"https://t.me/{b_user}?start=claim_{invite_token}"
         await message.answer(
             "⚠️ <b>Foydalanuvchini aniqlab bo'lmadi!</b>\n\n"
             "Telegram maxfiylik sozlamalari (Forward Privacy) bu insonning profilini yashirgan bo'lishi mumkin.\n\n"
             "Uni Owner qilishning eng oson yo'llari:\n"
-            f"1️⃣ O'sha insonga mana bu havolani yuboring (u 1 ta bosishda Owner bo'ladi):\n<code>{invite_link}</code>\n\n"
+            f"1️⃣ O'sha insonga bir martalik maxfiy havolani yuboring (u 1 ta bosishda Owner bo'ladi):\n<code>{invite_link}</code>\n\n"
             "2️⃣ Yoki uning <b>@username</b> yoki <b>Telegram ID</b> raqamini yozing:"
         )
         return
@@ -2081,11 +2227,11 @@ async def process_new_owner_forward(message: Message, state: FSMContext):
         if existing:
             existing.role = "owner"
             await session.commit()
-            await message.answer(f"✅ <b>{existing.name}</b> (ID: <code>{new_owner_id}</code>) ning roli <b>Owner</b> ga yangilandi! 👑")
+            await message.answer(f"✅ <b>{escape(str(existing.name))}</b> (ID: <code>{new_owner_id}</code>) ning roli <b>Owner</b> ga yangilandi! 👑")
         else:
             session.add(Admin(telegram_id=new_owner_id, name=new_owner_name, username=new_owner_username, role="owner"))
             await session.commit()
-            await message.answer(f"✅ <b>{new_owner_name}</b> (ID: <code>{new_owner_id}</code>) muvaffaqiyatli teng huquqli <b>Do'kon Egasi (Owner)</b> etib tayinlandi! 👑🌸")
+            await message.answer(f"✅ <b>{escape(str(new_owner_name))}</b> (ID: <code>{new_owner_id}</code>) muvaffaqiyatli teng huquqli <b>Do'kon Egasi (Owner)</b> etib tayinlandi! 👑🌸")
 
     await state.clear()
     await message.answer("👑 Admin menyusi:", reply_markup=get_admin_main_keyboard())
@@ -2162,9 +2308,9 @@ async def process_new_admin_forward(message: Message, state: FSMContext):
         if existing.scalars().first():
             await message.answer("Ushbu foydalanuvchi allaqachon admin yoki owner!")
         else:
-            session.add(Admin(telegram_id=new_admin_id, name=new_admin_name, username=new_owner_username if 'new_owner_username' in locals() else new_admin_username, role="admin"))
+            session.add(Admin(telegram_id=new_admin_id, name=new_admin_name, username=new_admin_username, role="admin"))
             await session.commit()
-            await message.answer(f"✅ <b>{new_admin_name}</b> (ID: <code>{new_admin_id}</code>) muvaffaqiyatli admin etib tayinlandi! 🌸")
+            await message.answer(f"✅ <b>{escape(str(new_admin_name))}</b> (ID: <code>{new_admin_id}</code>) muvaffaqiyatli admin etib tayinlandi! 🌸")
 
     await state.clear()
     await message.answer("👑 Admin menyusi:", reply_markup=get_admin_main_keyboard())
@@ -2539,12 +2685,12 @@ async def process_broadcast_message(message: Message, state: FSMContext):
     await state.clear()
 
     async with async_session_factory() as session:
-        res = await session.execute(select(User.telegram_id))
+        res = await session.execute(select(User.telegram_id).where(User.blocked_bot == False))
         user_ids = res.scalars().all()
 
     if not user_ids:
         await message.answer(
-            "ℹ️ Foydalanuvchilar ro'yxati bo'sh.",
+            "ℹ️ Faol foydalanuvchilar ro'yxati bo'sh.",
             reply_markup=get_admin_main_keyboard(),
         )
         return
@@ -2553,6 +2699,7 @@ async def process_broadcast_message(message: Message, state: FSMContext):
 
     success = 0
     failed = 0
+    blocked_ids = []
 
     from bot.loader import bot
     from aiogram.exceptions import TelegramRetryAfter
@@ -2575,11 +2722,14 @@ async def process_broadcast_message(message: Message, state: FSMContext):
                             caption=message.caption,
                             parse_mode="HTML",
                         )
+                    except TelegramForbiddenError:
+                        raise
                     except Exception:
                         await bot.send_photo(
                             chat_id=uid,
                             photo=message.photo[-1].file_id,
                             caption=message.caption,
+                            parse_mode=None,
                         )
                 elif message.text:
                     try:
@@ -2588,10 +2738,13 @@ async def process_broadcast_message(message: Message, state: FSMContext):
                             text=message.text,
                             parse_mode="HTML",
                         )
+                    except TelegramForbiddenError:
+                        raise
                     except Exception:
                         await bot.send_message(
                             chat_id=uid,
                             text=message.text,
+                            parse_mode=None,
                         )
                 else:
                     await bot.copy_message(
@@ -2603,6 +2756,9 @@ async def process_broadcast_message(message: Message, state: FSMContext):
                 sent = True
                 await asyncio.sleep(0.04)
                 break
+            except TelegramForbiddenError:
+                blocked_ids.append(uid)
+                break
             except TelegramRetryAfter as e:
                 logger.warning(f"Rate limited by Telegram during broadcast, sleeping {e.retry_after}s...")
                 await asyncio.sleep(e.retry_after + 0.5)
@@ -2612,6 +2768,16 @@ async def process_broadcast_message(message: Message, state: FSMContext):
                 break
         if not sent:
             failed += 1
+
+    if blocked_ids:
+        try:
+            async with async_session_factory() as session:
+                await session.execute(
+                    update(User).where(User.telegram_id.in_(blocked_ids)).values(blocked_bot=True)
+                )
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"Could not mark blocked_bot users during broadcast: {e}")
 
     summary_text = (
         "📣 <b>Broadcast natijasi:</b> 🌸\n\n"

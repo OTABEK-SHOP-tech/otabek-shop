@@ -65,12 +65,16 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   const handleShareStory = () => {
     haptic.impact('medium');
-    playBoutiqueSound('chime');
     const photoUrl = photos[0] ? getMediaUrl(photos[0]) : '';
-    shareToStory(photoUrl, `🌙 Moonlight Chinese Shop — ${product.title} ✨ Maxsus 15% chegirma: STORY15`);
-    setStoryShared(true);
-    triggerPetalBurst(0.5, 0.4);
-    setTimeout(() => setStoryShared(false), 4000);
+    const shared = shareToStory(photoUrl, `🌙 Moonlight Chinese Shop — ${product.title} ✨`);
+    if (shared) {
+      playBoutiqueSound('chime');
+      setStoryShared(true);
+      triggerPetalBurst(0.5, 0.4);
+      setTimeout(() => setStoryShared(false), 4000);
+    } else {
+      alert("Stories ga ulashish faqat Telegram mobil ilovasida qo'llab-quvvatlanadi 🌸");
+    }
   };
 
   const handleDirectAsk = () => {
@@ -114,7 +118,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           <button
             onClick={handleShareStory}
             className="p-2 rounded-2xl bg-sakura-blush/60 dark:bg-sakura-darkcardsoft text-sakura-rose shadow-xs transition-all active:scale-125"
-            title="Stories ga ulashish (-15%)"
+            title="Stories ga ulashish"
           >
             <Share2 className="w-4 h-4" />
           </button>
@@ -136,13 +140,13 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         </div>
       </div>
 
-      {/* Story-to-earn notification toast */}
+      {/* Story share notification toast */}
       {storyShared && (
         <div className="mx-4 mt-2 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 text-xs flex items-center gap-2 shadow-sm animate-fade-in">
           <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
           <div>
-            <b>Stories ga ulashildi! 🎁</b>
-            <div>15% chegirma promokodingiz: <code className="font-bold underline">STORY15</code></div>
+            <b>Stories ga ulashildi! 🌸</b>
+            <div>Do'konimizni qo'llab-quvvatlaganingiz uchun rahmat ✨</div>
           </div>
         </div>
       )}

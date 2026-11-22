@@ -17,6 +17,14 @@ from db.session import async_session_factory
 logger = logging.getLogger(__name__)
 
 
+def _safe_int(val: Any, default: int) -> int:
+    try:
+        parsed = int(str(val).strip())
+        return parsed if parsed > 0 else default
+    except (ValueError, TypeError):
+        return default
+
+
 async def post_product_to_channel(product: Product) -> Dict[str, Any]:
     if not bot:
         return {"success": False, "error": "Bot is not running"}
@@ -50,9 +58,9 @@ async def post_product_to_channel(product: Product) -> Dict[str, Any]:
         res_settings = await session.execute(select(Setting))
         settings_map = {s.key: s.value for s in res_settings.scalars().all()}
 
-        cargo_rate = int(settings_map.get("cargo_rate", 10000))
-        cargo_rate_avia = int(settings_map.get("cargo_rate_avia", 14000))
-        cargo_rate_avto = int(settings_map.get("cargo_rate_avto", 10000))
+        cargo_rate = _safe_int(settings_map.get("cargo_rate"), 10000)
+        cargo_rate_avia = _safe_int(settings_map.get("cargo_rate_avia"), 14000)
+        cargo_rate_avto = _safe_int(settings_map.get("cargo_rate_avto"), 10000)
         delivery_days_avia = settings_map.get("delivery_days_avia", "7–9 kun")
         delivery_days_avto = settings_map.get("delivery_days_avto", "14–18 kun")
         delivery_days = settings_map.get("delivery_days", "7–18 kun")

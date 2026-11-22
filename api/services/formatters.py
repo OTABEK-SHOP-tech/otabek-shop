@@ -670,14 +670,14 @@ def build_channel_caption(
         if is_non_clothing_category(clean_cat):
             if clean_cat in ("kosmetika", "aksessuar", "dekor", "soat"):
                 if sizes and sizes != ["Standart"]:
-                    quote_lines.append(f"🌸 <b>O'lcham:</b> {sizes_display}")
+                    quote_lines.append(f"🌸 <b>O'lcham:</b> {escape(sizes_display)}")
             else:
                 if sizes and sizes != ["Standart"]:
-                    quote_lines.append(f"🌸 <b>O'lcham:</b> {sizes_display}")
+                    quote_lines.append(f"🌸 <b>O'lcham:</b> {escape(sizes_display)}")
                 else:
                     quote_lines.append(f"🌸 <b>O'lcham:</b> Standart")
         else:
-            quote_lines.append(f"🐾 <b>Razmer:</b> {sizes_display}")
+            quote_lines.append(f"🐾 <b>Razmer:</b> {escape(sizes_display)}")
 
         if colors and len(colors) > 0:
             from api.services.vision_ocr import normalize_colors
@@ -686,7 +686,7 @@ def build_channel_caption(
             if clean_colors:
                 colors_display = ", ".join(clean_colors)
                 colors_display = re.sub(r"\s+([,.:;!?])", r"\1", colors_display)
-                quote_lines.append(f"🎨 <b>Ranglar:</b> {colors_display}")
+                quote_lines.append(f"🎨 <b>Ranglar:</b> {escape(colors_display)}")
 
         if cargo_rate_avia is not None and cargo_rate_avto is not None:
             avia_str = f"{int(cargo_rate_avia):,}".replace(",", ".")
@@ -759,6 +759,10 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
         "weight_grams": None,
     }
 
+    if not text:
+        return result
+
+    text = re.sub(r"(?i)(?:^|\s)/boost(?:@\w+)?(?=\s|$)\s*", " ", text).strip()
     if not text:
         return result
 
@@ -929,7 +933,7 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
             cleaned = re.sub(r"[\s✨🌸🎀]+$", "", cleaned).strip()
             cleaned = strip_private_pricing_data(cleaned)
             cleaned = strip_trailing_price_from_title(cleaned)
-            if cleaned:
+            if cleaned and cleaned.strip().lower() != "boost":
                 result["title"] = cleaned[0].upper() + cleaned[1:] if len(cleaned) > 1 else cleaned.upper()
                 break
             # Check next line if first line only had hashtag
@@ -940,7 +944,7 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
                     c_next = re.sub(r"[\s✨🌸🎀]+$", "", c_next).strip()
                     c_next = strip_private_pricing_data(c_next)
                     c_next = strip_trailing_price_from_title(c_next)
-                    if c_next and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_next, re.IGNORECASE):
+                    if c_next and c_next.strip().lower() != "boost" and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_next, re.IGNORECASE):
                         result["title"] = c_next[0].upper() + c_next[1:] if len(c_next) > 1 else c_next.upper()
                         break
 
@@ -951,13 +955,13 @@ def parse_channel_post(text: str, apply_margin: bool = False) -> Dict[str, Any]:
                 c_line = re.sub(r"[\s✨🌸🎀]+$", "", c_line).strip()
                 c_line = strip_private_pricing_data(c_line)
                 c_line = strip_trailing_price_from_title(c_line)
-                if c_line and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_line, re.IGNORECASE):
+                if c_line and c_line.strip().lower() != "boost" and not re.search(r"^(?:[¥￥$€]\s*\d+|\d+(?:[.,]\d+)?\s*(?:yuan|юань|rmb|[元块]|so['’`]?m|som|сум|k|ming))\s*$", c_line, re.IGNORECASE):
                     result["title"] = c_line[0].upper() + c_line[1:] if len(c_line) > 1 else c_line.upper()
                     break
 
-    # If title is missing or blanked, fall back to clean category title or generic Mahsulot 🌸
+    # If title is missing, blanked, or still a literal 'boost' token, fall back to category/generic
     clean_t = strip_trailing_price_from_title(result.get("title", ""))
-    if not clean_t:
+    if not clean_t or clean_t.strip().lower() == "boost":
         cat_disp = result.get("category") or ""
         result["title"] = f"{cat_disp.capitalize()} 🌸" if cat_disp else "Mahsulot 🌸"
     else:

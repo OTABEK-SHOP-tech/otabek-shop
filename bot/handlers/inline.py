@@ -175,7 +175,13 @@ async def handle_dilemma_vote(callback: CallbackQuery):
     )
 
     try:
-        await callback.edit_message_reply_markup(reply_markup=new_markup)
+        if callback.inline_message_id and callback.bot:
+            await callback.bot.edit_message_reply_markup(
+                inline_message_id=callback.inline_message_id,
+                reply_markup=new_markup,
+            )
+        elif callback.message:
+            await callback.message.edit_reply_markup(reply_markup=new_markup)
         await callback.answer(f"{choice}-variantga ovoz berildi! Rahmat! ✨")
     except Exception:
         await callback.answer("Ovozingiz qo'shildi! ✨")

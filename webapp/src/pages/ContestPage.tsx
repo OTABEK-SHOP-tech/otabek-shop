@@ -16,7 +16,7 @@ import { MyContestStats, LeaderboardEntry, Contest } from '../types';
 import { Translations } from '../i18n';
 import { EmptyState } from '../components/EmptyState';
 import { triggerPetalBurst } from '../components/PetalBurst';
-import { haptic, openTelegramLink } from '../utils/telegram';
+import { haptic, openTelegramLink, copyTextToClipboard } from '../utils/telegram';
 
 interface ContestPageProps {
   initData: string;
@@ -106,9 +106,9 @@ export const ContestPage: React.FC<ContestPageProps> = ({
     return () => clearInterval(timer);
   }, [stats?.contest?.ends_at]);
 
-  const handleCopyLink = () => {
+  const handleCopyLink = async () => {
     if (!stats?.invite_link) return;
-    navigator.clipboard.writeText(stats.invite_link);
+    await copyTextToClipboard(stats.invite_link);
     setCopied(true);
     haptic.notification('success');
     triggerPetalBurst(0.5, 0.4);
@@ -118,7 +118,7 @@ export const ContestPage: React.FC<ContestPageProps> = ({
   const handleShareLink = () => {
     if (!stats?.invite_link || !stats?.contest) return;
     haptic.impact('medium');
-    const shareText = `🌸 Sakura shop do'konining go'zal konkursida qatnashing va ajoyib sovg'alarni yutib oling! ✨\n🎁 Sovg'alar: ${(stats.contest.prizes ?? [stats.contest.prize_1, stats.contest.prize_2]).join(', ')}\n\nQatnashish uchun: ${stats.invite_link}`;
+    const shareText = `🌸 Moonlight Chinese Shop do'konining go'zal konkursida qatnashing va ajoyib sovg'alarni yutib oling! ✨\n🎁 Sovg'alar: ${(stats.contest.prizes ?? [stats.contest.prize_1, stats.contest.prize_2]).join(', ')}\n\nQatnashish uchun: ${stats.invite_link}`;
     const url = `https://t.me/share/url?url=${encodeURIComponent(stats.invite_link)}&text=${encodeURIComponent(shareText)}`;
     openTelegramLink(url);
   };

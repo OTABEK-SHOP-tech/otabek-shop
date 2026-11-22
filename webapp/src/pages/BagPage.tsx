@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Trash2, Plus, Minus, Send, Copy, Check, ShoppingBag, ArrowRight, Truck, Coins, Sparkles, ShieldCheck, Camera, CreditCard, Gift, Ticket } from 'lucide-react';
 import { CartSummary, Order, ShopSettings, UserCashback, ReferralStats, ReferralCoupon, CouponValidation } from '../types';
 import { formatPrice, getMediaUrl } from '../utils/format';
-import { getTelegramWebApp, haptic, openTelegramLink, playBoutiqueSound } from '../utils/telegram';
+import { copyTextToClipboard, getTelegramWebApp, haptic, openTelegramLink, playBoutiqueSound } from '../utils/telegram';
 import { triggerPetalBurst } from '../components/PetalBurst';
 import { EmptyState } from '../components/EmptyState';
 import { Translations } from '../i18n';
@@ -45,6 +45,16 @@ export const BagPage: React.FC<BagPageProps> = ({
   const [validatedCoupon, setValidatedCoupon] = useState<CouponValidation | null>(null);
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const checkoutRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    try {
+      const promoParam = new URLSearchParams(window.location.search).get('promo');
+      if (promoParam && promoParam.trim()) {
+        setManualCouponCode(promoParam.trim().toUpperCase());
+      }
+    } catch (e) {}
+  }, []);
 
   const items = cart?.items || [];
   const hasItems = items.length > 0;
@@ -91,8 +101,18 @@ export const BagPage: React.FC<BagPageProps> = ({
     : null;
 
   const activeCouponCode = selectedCoupon?.code || validatedCoupon?.code || null;
+  const activeDiscountPercent = selectedCoupon
+    ? (selectedCoupon.discount_percent || 20)
+    : (validatedCoupon?.discount_percent || 20);
   const couponDiscount = (activeCouponCode && targetProduct)
-    ? Math.floor(targetProduct.product_price * 0.20)
+    ? (
+        validatedCoupon &&
+        !selectedCoupon &&
+        validatedCoupon.product_id === targetProduct.product_id &&
+        typeof validatedCoupon.discount_amount === 'number'
+          ? validatedCoupon.discount_amount
+          : Math.floor(targetProduct.product_price * (activeDiscountPercent / 100))
+      )
     : 0;
 
   const rawSubtotal = cart?.subtotal || 0;
@@ -153,7 +173,7 @@ export const BagPage: React.FC<BagPageProps> = ({
       tg.MainButton.enable();
 
       const handleMainButtonClick = () => {
-        handleCheckout();
+        checkoutRef.current();
       };
 
       tg.MainButton.onClick(handleMainButtonClick);
@@ -211,8 +231,10 @@ export const BagPage: React.FC<BagPageProps> = ({
     }
   };
 
-  const handleCopyCodeBlock = (text: string) => {
-    navigator.clipboard.writeText(text);
+  checkoutRef.current = handleCheckout;
+
+  const handleCopyCodeBlock = async (text: string) => {
+    await copyTextToClipboard(text);
     setCopied(true);
     haptic.notification('success');
     playBoutiqueSound('tap');
@@ -627,12 +649,12 @@ export const BagPage: React.FC<BagPageProps> = ({
         {(selectedCoupon || validatedCoupon) && items.length > 1 && (
           <div className="mt-2.5 p-2 rounded-xl bg-white/80 dark:bg-sakura-darkcard/80 border border-sakura-pink/30">
             <span className="text-[10px] font-bold text-sakura-plum/80 dark:text-sakura-blush/80 block mb-1">
-              Qaysi tovaringizga 20% chegirma qo'llansin?
+              Qaysi tovaringizga {activeDiscountPercent}% chegirma qo'llansin?
             </span>
             <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
               {items.map((it) => {
                 const isTarget = targetProduct?.product_id === it.product_id;
-                const itDiscount = Math.floor(it.product_price * 0.20);
+                const itDiscount = Math.floor(it.product_price * (activeDiscountPercent / 100));
                 return (
                   <button
                     key={it.id}
@@ -659,7 +681,7 @@ export const BagPage: React.FC<BagPageProps> = ({
         {/* Applied coupon banner */}
         {(selectedCoupon || validatedCoupon) && targetProduct && (
           <div className="mt-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 p-2 rounded-xl border border-emerald-300 dark:border-emerald-800 flex items-center justify-between">
-            <span className="truncate max-w-[210px]">✓ 20% Chegirma ({targetProduct.product_title}):</span>
+            <span className="truncate max-w-[210px]">✓ {activeDiscountPercent}% Chegirma ({targetProduct.product_title}):</span>
             <span className="font-extrabold font-mono">-{formatPrice(couponDiscount)}</span>
           </div>
         )}
@@ -711,7 +733,7 @@ export const BagPage: React.FC<BagPageProps> = ({
         </div>
         {couponDiscount > 0 && targetProduct && (
           <div className="flex justify-between text-xs py-1 text-rose-600 dark:text-rose-400 font-bold">
-            <span className="truncate max-w-[200px]">20% Chegirma ({targetProduct.product_title}):</span>
+            <span className="truncate max-w-[200px]">{activeDiscountPercent}% Chegirma ({targetProduct.product_title}):</span>
             <span>-{formatPrice(couponDiscount)}</span>
           </div>
         )}

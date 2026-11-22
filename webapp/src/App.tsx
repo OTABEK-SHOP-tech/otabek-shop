@@ -578,7 +578,11 @@ export const App: React.FC = () => {
             {currentTab === 'reviews' && (
               <ReviewsPage
                 reviews={reviews}
-                onReviewSubmitted={(rev) => setReviews([rev, ...reviews])}
+                onReviewSubmitted={(rev) => {
+                  if (rev.approved) {
+                    setReviews((prev) => [rev, ...prev]);
+                  }
+                }}
                 t={t}
                 initData={initData}
               />

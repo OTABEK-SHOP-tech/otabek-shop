@@ -619,7 +619,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({
       sizes: sizes ? sizes.split(',').map((s) => s.trim()).filter(Boolean) : [],
       colors: colors ? colors.split(',').map((c) => c.trim()).filter(Boolean) : [],
       weight_grams: weightGrams ? parseInt(weightGrams.replace(/\D/g, '') || '0') : null,
-      in_stock: true,
+      in_stock: editingProduct ? editingProduct.in_stock : true,
     };
 
     try {

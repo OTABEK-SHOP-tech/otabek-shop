@@ -1,6 +1,6 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy import select, delete, desc, update
+from sqlalchemy import select, delete, desc, update, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import get_current_user, TelegramUser
@@ -81,12 +81,47 @@ async def create_order(
                 "photo": photo,
             })
     elif payload.items:
-        items_snapshot = payload.items
-        for it in items_snapshot:
-            total += int(it.get("price", 0)) * int(it.get("qty", 1))
-            w = it.get("weight_grams")
-            if w:
-                total_weight += int(w) * int(it.get("qty", 1))
+        for it in payload.items:
+            qty = int(it.get("qty", 1))
+            if qty < 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Mahsulot soni kamida 1 ta bo'lishi kerak",
+                )
+            pid = it.get("product_id")
+            db_prod = None
+            if pid is not None:
+                p_res = await db.execute(select(Product).where(Product.id == int(pid)))
+                db_prod = p_res.scalars().first()
+            if db_prod:
+                unit_price = db_prod.price
+                item_title = db_prod.title
+                item_weight = db_prod.weight_grams
+                item_photo = db_prod.photos[0] if db_prod.photos else (it.get("photo") or "")
+            else:
+                unit_price = int(it.get("price", 0))
+                if unit_price < 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Mahsulot narxi manfiy bo'lishi mumkin emas",
+                    )
+                item_title = it.get("title") or it.get("product_title") or "Mahsulot"
+                item_weight = it.get("weight_grams")
+                item_photo = it.get("photo") or ""
+
+            total += unit_price * qty
+            if item_weight:
+                total_weight += int(item_weight) * qty
+            items_snapshot.append({
+                "product_id": pid,
+                "title": item_title,
+                "price": unit_price,
+                "size": it.get("size"),
+                "color": it.get("color"),
+                "qty": qty,
+                "weight_grams": item_weight,
+                "photo": item_photo,
+            })
 
     # Apply 20% coupon discount if provided
     discount_amount = 0
@@ -126,7 +161,19 @@ async def create_order(
         max_allowed = int(subtotal_after_discount * 0.20)
         applied_cashback = min(payload.use_cashback, user_cashback, max_allowed)
         if applied_cashback > 0 and db_user:
-            db_user.cashback_balance -= applied_cashback
+            cb_res = await db.execute(
+                update(User)
+                .where(
+                    User.telegram_id == user.id,
+                    User.cashback_balance >= applied_cashback,
+                )
+                .values(cashback_balance=User.cashback_balance - applied_cashback)
+            )
+            if cb_res.rowcount == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Keshbek balansi yetarli emas ❌",
+                )
 
     final_total = max(0, subtotal_after_discount - applied_cashback)
 
@@ -183,13 +230,29 @@ async def create_order(
             if promo_obj.max_uses and promo_obj.used_count >= promo_obj.max_uses:
                 promo_obj.is_active = False
     elif applied_coupon_code:
-        # General promo code update
+        # Atomic promo code redemption update to avoid race conditions
+        pr_update = await db.execute(
+            update(PromoCode)
+            .where(
+                PromoCode.code == applied_coupon_code,
+                PromoCode.is_active == True,
+                or_(
+                    PromoCode.max_uses.is_(None),
+                    PromoCode.max_uses == 0,
+                    PromoCode.used_count < PromoCode.max_uses,
+                ),
+            )
+            .values(used_count=PromoCode.used_count + 1)
+        )
+        if pr_update.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Kupondan foydalanish limiti tugagan ❌",
+            )
         pr_res = await db.execute(select(PromoCode).where(PromoCode.code == applied_coupon_code))
         promo_obj = pr_res.scalars().first()
-        if promo_obj:
-            promo_obj.used_count += 1
-            if promo_obj.max_uses and promo_obj.used_count >= promo_obj.max_uses:
-                promo_obj.is_active = False
+        if promo_obj and promo_obj.max_uses and promo_obj.used_count >= promo_obj.max_uses:
+            promo_obj.is_active = False
 
     # Clear user's cart
     await db.execute(delete(CartItem).where(CartItem.user_id == user.id))

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.config import settings
 from bot.loader import bot
 from bot.services.contest_service import get_active_contest
-from db.models import Admin, Setting
+from db.models import Admin, Contest, Setting
 from db.session import async_session_factory
 
 router = Router(name="channel")
@@ -92,8 +92,14 @@ async def handle_bot_chat_member_update(event: ChatMemberUpdated):
     # Groups/supergroups are discussion chats (chat_id), never channel_id.
     if chat.type != "channel":
         if chat.type in ["group", "supergroup"] and event.new_chat_member.status == ChatMemberStatus.ADMINISTRATOR:
-            logger.info(f"Bot added to discussion group {chat.title} ({chat.id}). Updating chat_id.")
             async with async_session_factory() as session:
+                actor_id = event.from_user.id if event.from_user else 0
+                if not actor_id or not await is_shop_owner(session, actor_id):
+                    logger.warning(
+                        f"Bot added to group {escape(str(chat.title))} ({chat.id}) by non-owner {actor_id}. Ignored."
+                    )
+                    return
+                logger.info(f"Bot added to discussion group {chat.title} ({chat.id}) by owner {actor_id}. Updating chat_id.")
                 res_chat = await session.execute(select(Setting).where(Setting.key == "chat_id"))
                 s = res_chat.scalars().first()
                 if s:
@@ -108,17 +114,20 @@ async def handle_bot_chat_member_update(event: ChatMemberUpdated):
     new_status = event.new_chat_member.status
 
     async with async_session_factory() as session:
-        # Get owner
-        res_owner = await session.execute(select(Admin).where(Admin.role == "owner"))
-        owner = res_owner.scalars().first()
-        owner_id = owner.telegram_id if owner else settings.DEV_ADMIN_ID
+        # Get owners
+        res_owners = await session.execute(select(Admin).where(Admin.role == "owner"))
+        owners = res_owners.scalars().all()
+        owner_ids = [o.telegram_id for o in owners]
+        if not owner_ids and settings.DEV_ADMIN_ID:
+            owner_ids = [settings.DEV_ADMIN_ID]
 
         # Case 1: Bot added as Administrator
-        if new_status == ChatMemberStatus.ADMINISTRATOR:
+        if new_status == ChatMemberStatus.ADMINISTRATOR and getattr(event.new_chat_member, "can_post_messages", True):
             # Accept channels added by any verified shop owner, not only the first one in the table
-            if not await is_shop_owner(session, from_user.id):
+            if not from_user or not await is_shop_owner(session, from_user.id):
+                actor_id = from_user.id if from_user else 0
                 logger.warning(
-                    f"Bot added to channel {escape(str(chat.title))} ({chat.id}) by non-owner {from_user.id}. Ignored."
+                    f"Bot added to channel {escape(str(chat.title))} ({chat.id}) by non-owner {actor_id}. Ignored."
                 )
                 return
 
@@ -158,15 +167,47 @@ async def handle_bot_chat_member_update(event: ChatMemberUpdated):
             ch_setting = res_ch.scalars().first()
             if ch_setting and ch_setting.value == str(chat.id):
                 ch_setting.value = ""
+                res_c = await session.execute(select(Contest).where(Contest.status == "active"))
+                active_c = res_c.scalars().first()
+                if active_c:
+                    active_c.status = "paused"
                 await session.commit()
 
-                if owner_id:
+                for oid in owner_ids:
                     try:
                         await bot.send_message(
-                            chat_id=owner_id,
+                            chat_id=oid,
                             text=(
                                 f"⚠️ <b>Bot '{escape(str(chat.title))}' kanalidan chiqarildi.</b>\n"
                                 f"Kanal do'kondan avtomatik tarzda uzildi."
+                            )
+                        )
+                    except Exception:
+                        pass
+
+        # Case 3: Bot demoted or lost post rights in the linked channel
+        elif old_status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR) and (
+            new_status not in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR)
+            or not getattr(event.new_chat_member, "can_post_messages", True)
+        ):
+            res_ch = await session.execute(select(Setting).where(Setting.key == "channel_id"))
+            ch_setting = res_ch.scalars().first()
+            if ch_setting and ch_setting.value == str(chat.id):
+                logger.warning(f"Bot demoted or lost posting rights in linked channel {chat.id}. Pausing active contest.")
+                res_c = await session.execute(select(Contest).where(Contest.status == "active"))
+                active_c = res_c.scalars().first()
+                if active_c:
+                    active_c.status = "paused"
+                    await session.commit()
+
+                for oid in owner_ids:
+                    try:
+                        await bot.send_message(
+                            chat_id=oid,
+                            text=(
+                                "🚨 <b>DIQQAT! Bot kanalda admin huquqidan mahrum bo'ldi!</b>\n\n"
+                                "Konkurs hisob-kitobida xatolik bo'lmasligi uchun konkurs vaqtincha to'xtatildi (Pauza).\n"
+                                "Iltimos, botni qaytadan kanalga to'liq admin qilib qo'ying."
                             )
                         )
                     except Exception:

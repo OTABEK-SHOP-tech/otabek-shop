@@ -1,0 +1,27 @@
+# Secrets & local environment files (never bake into Docker image)
+.env
+.env.*
+!.env.example
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Python virtual environments & caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Node modules (rebuilt cleanly during Docker image build)
+webapp/node_modules/
+
+# Version control & local tests/IDE config
+.git/
+.gitignore
+tests/
+.vscode/
+.idea/

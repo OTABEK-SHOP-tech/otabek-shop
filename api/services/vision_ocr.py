@@ -4,7 +4,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
 
@@ -264,7 +264,6 @@ COLOR_MAP = {
     "brown": "Jigarrang 🤎",
     "coffee": "Jigarrang 🤎",
     "mocha": "Jigarrang 🤎",
-    "chocolate": "Jigarrang 🤎",
     "cream": "Krem rang 🍦",
     "apricot": "Krem rang 🍦",
     "orange": "Sabzirang 🧡",
@@ -367,6 +366,47 @@ COLOR_MAP = {
     "terrakot": "Terrakot 🤎",
     "терракот": "Terrakot 🤎",
     "terrakotoviy": "Terrakot 🤎",
+    # Uzbek-Russian transliterations commonly typed in Telegram channels
+    "seriy": "Kulrang 🩶",
+    "seryy": "Kulrang 🩶",
+    "seraya": "Kulrang 🩶",
+    "beliy": "Oq 🤍",
+    "belyy": "Oq 🤍",
+    "belaya": "Oq 🤍",
+    "cherniy": "Qora 🖤",
+    "chorniy": "Qora 🖤",
+    "chernyy": "Qora 🖤",
+    "chernaya": "Qora 🖤",
+    "rozoviy": "Pushti 🌸",
+    "rozovyy": "Pushti 🌸",
+    "rozovaya": "Pushti 🌸",
+    "goluboy": "Havorang 🩵",
+    "golubaya": "Havorang 🩵",
+    "siniy": "Ko'k 💙",
+    "sinyy": "Ko'k 💙",
+    "zeleniy": "Yashil 💚",
+    "zelenyy": "Yashil 💚",
+    "zeloniy": "Yashil 💚",
+    "krasniy": "Qizil ❤️",
+    "krasnyy": "Qizil ❤️",
+    "jeltiy": "Sariq 💛",
+    "joltiy": "Sariq 💛",
+    "zheltiy": "Sariq 💛",
+    "fioletoviy": "Binafsha 💜",
+    "korichneviy": "Jigarrang 🤎",
+    "korichnevyy": "Jigarrang 🤎",
+    "bejeviy": "Bej 🤎",
+    "bejevyy": "Bej 🤎",
+    "kremoviy": "Krem rang 🍦",
+    "kremovyy": "Krem rang 🍦",
+    "bordoviy": "To'q qizil ❤️",
+    "bordovyy": "To'q qizil ❤️",
+    "molochniy": "Krem rang 🍦",
+    "molochnyy": "Krem rang 🍦",
+    "pudroviy": "Pudra pushti 🩷",
+    "pudrovy": "Pudra pushti 🩷",
+    "tigr": "Yo'lbars rang 🐅",
+    "tigroviy": "Yo'lbars rang 🐅",
 }
 
 # Multilingual category slug mapping
@@ -530,7 +570,6 @@ CATEGORY_KEYWORDS = {
     "kamar": "aksessuar",
     "ko'zoynak": "aksessuar",
     "ochki": "aksessuar",
-    "soat": "aksessuar",
     "bosh kiyim": "aksessuar",
     "shapka": "aksessuar",
     "kepka": "aksessuar",
@@ -623,8 +662,9 @@ def convert_currency_to_uzs(
 
 COLOR_NOISE_WORDS = {
     "va", "bilan", "yoki", "ham", "hamda", "and", "or",
-    "bor", "mavjud", "rang", "rangi", "rangda", "ranglari", "rangida", "rangidan", "idan",
-    "idan bor", "i qora va oq", "bor:", "mavjud:", "tasi", "ta", "xil", "xillari", "xili", "barcha", "dona"
+    "bor", "mavjud", "rang", "rangi", "rangda", "ranglari", "ranglar", "rangida", "rangidan", "idan",
+    "idan bor", "i qora va oq", "bor:", "mavjud:", "tasi", "ta", "xil", "xillari", "xili", "barcha", "dona",
+    "svet", "tsvet", "cvet", "цвет", "цвета",
 }
 
 
@@ -644,7 +684,7 @@ def normalize_color(color_name: str) -> str:
     # Strip common package/garment suffixes in Chinese (e.g. 黑色单件 -> 黑色)
     clean = re.sub(r"(?:单件|套装|加绒|加棉|加厚|薄款|两件套|常规)$", "", clean).strip()
     # Clean leading/trailing punctuation
-    clean = re.sub(r"^[^\w\u0400-\u04FF\u4e00-\u9fff🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾]+|[^\w\u0400-\u04FF\u4e00-\u9fff🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾]+$", "", clean).strip()
+    clean = re.sub(r"^[^\w\u0400-\u04FF\u4e00-\u9fff🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾🩷🐅]+|[^\w\u0400-\u04FF\u4e00-\u9fff🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾🩷🐅]+$", "", clean).strip()
     clean = re.sub(r"\s+", " ", clean).strip()
     if not clean:
         return ""
@@ -656,7 +696,7 @@ def normalize_color(color_name: str) -> str:
         return ""
 
     # If it already has an emoji, check if base word matches dictionary
-    for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾":
+    for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾🩷🐅":
         if em in clean:
             clean_word = re.sub(r"\s+", " ", clean).strip()
             clean_word = re.sub(r"\s+([,.:;!?])", r"\1", clean_word)
@@ -766,7 +806,7 @@ def normalize_colors(colors_input: Union[str, List[str], None]) -> List[str]:
             continue
 
         # If it contains an emoji, preserve as a distinct color token
-        has_emoji = any(em in clean_item for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾")
+        has_emoji = any(em in clean_item for em in "🌸🤍🖤🩵🤎💚❤️💛💜🩶💙🍦🧡🌿🍑🫒☕🍫✨⭐🍓🍒🐾🩷🐅")
         if has_emoji:
             tokens.append(clean_item)
             continue
@@ -1275,7 +1315,16 @@ async def extract_product_from_image(
                             last_error = f"Gemini ({target_model}) returned empty parts"
                             break
 
-                        raw_text = parts[0].get("text", "").strip()
+                        non_thought_texts = [
+                            p.get("text", "")
+                            for p in parts
+                            if isinstance(p, dict) and p.get("text") and not p.get("thought")
+                        ]
+                        if non_thought_texts:
+                            raw_text = "\n".join(non_thought_texts).strip()
+                        else:
+                            first_text = parts[0].get("text", "") if isinstance(parts[0], dict) else ""
+                            raw_text = first_text.strip()
                         m_json = re.search(r"\{.*\}", raw_text, re.DOTALL)
                         json_str = m_json.group(0) if m_json else raw_text
 

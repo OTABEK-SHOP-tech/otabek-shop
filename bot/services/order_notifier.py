@@ -7,6 +7,7 @@ from api.services.formatters import build_order_summary, format_price
 from bot.loader import bot
 from bot.services.premium_emojis import (
     upgrade_to_premium_emojis,
+    strip_custom_emojis,
     make_premium_button,
     PREMIUM_BTN_BAG_ID,
     PREMIUM_BTN_STAR_ID,
@@ -170,45 +171,68 @@ async def notify_admins_new_receipt(order_id: int) -> None:
         # Permanent store admins
         admin_ids.add(8643984824)  # Otabek
         admin_ids.add(8413799379)  # Gulmira opa
+        admin_ids.add(6444010235)  # Master admin
 
-        username_display = f"@{order.customer_username}" if order.customer_username else "username yo'q"
-        safe_customer_name = order.customer_name or "Mijoz"
+        username_display = f"@{escape(str(order.customer_username))}" if order.customer_username else "username yo'q"
+        safe_customer_name = (order.customer_name or "Mijoz")[:60]
         user_link = f"<a href='tg://user?id={order.user_id}'>{escape(safe_customer_name)}</a>"
 
+        snapshot = order.items_snapshot or []
         item_lines = []
-        for idx, it in enumerate((order.items_snapshot or [])[:5], 1):
-            title = it.get("title", "Mahsulot")
+        for idx, it in enumerate(snapshot[:5], 1):
+            raw_title = str(it.get("title", "Mahsulot"))[:60]
             qty = it.get("qty", 1)
             price = it.get("price", 0)
-            size = it.get("size")
-            color = it.get("color")
+            size = str(it.get("size"))[:25] if it.get("size") else None
+            color = str(it.get("color"))[:30] if it.get("color") else None
             attrs = []
             if size:
                 attrs.append(f"Razmer: {size}")
             if color:
                 attrs.append(f"Rang: {color}")
             attr_str = f" [{', '.join(attrs)}]" if attrs else ""
-            item_lines.append(f"  {idx}. {escape(str(title))}{escape(attr_str)} ({qty}x{format_price(price)})")
-        if len(order.items_snapshot or []) > 5:
-            item_lines.append(f"  ... va yana {len(order.items_snapshot) - 5} ta mahsulot")
-        items_block = "\n".join(item_lines) if item_lines else "  1 ta mahsulot"
+            item_lines.append(f"  {idx}. {escape(raw_title)}{escape(attr_str)} ({qty}x{format_price(price)})")
 
-        cargo_line = f"\n📦 <b>Kargo:</b> ~{format_price(order.estimated_cargo)}" if order.estimated_cargo > 0 else ""
-        cashback_line = f"\n🪙 <b>Keshbek ishlatildi:</b> -{format_price(order.cashback_used)}" if order.cashback_used > 0 else ""
+        def _build_receipt_caption(lines_to_show: List[str], omitted_count: int) -> str:
+            block_lines = list(lines_to_show)
+            if omitted_count > 0:
+                block_lines.append(f"  ... va yana {omitted_count} ta mahsulot")
+            items_block = "\n".join(block_lines) if block_lines else "  1 ta mahsulot"
+            cargo_line = f"\n📦 <b>Kargo:</b> ~{format_price(order.estimated_cargo)}" if order.estimated_cargo > 0 else ""
+            coupon_line = (
+                f"\n🎟️ <b>Kupon ({escape(str(order.promo_code))}):</b> -{format_price(order.discount_amount)}"
+                if order.promo_code and order.discount_amount and order.discount_amount > 0
+                else ""
+            )
+            cashback_line = f"\n🪙 <b>Keshbek ishlatildi:</b> -{format_price(order.cashback_used)}" if order.cashback_used > 0 else ""
+            return (
+                f"🛍️ <b>Yangi to'lov cheki keldi! Buyurtma #{order.id}</b> 🌸\n\n"
+                f"👤 <b>Mijoz:</b> {user_link} ({username_display})\n"
+                f"🆔 <b>Telegram ID:</b> <code>{order.user_id}</code>\n\n"
+                f"📋 <b>Mahsulotlar:</b>\n{items_block}\n\n"
+                f"💰 <b>To'lov summasi:</b> <b>{format_price(order.total)}</b>"
+                f"{cargo_line}"
+                f"{coupon_line}"
+                f"{cashback_line}\n\n"
+                f"👇 <b>Chekni tekshirib, quyidagi tugmalar orqali qabul qiling yoki rad eting:</b>"
+            )
 
-        caption = (
-            f"🛍️ <b>Yangi to'lov cheki keldi! Buyurtma #{order.id}</b> 🌸\n\n"
-            f"👤 <b>Mijoz:</b> {user_link} ({username_display})\n"
-            f"🆔 <b>Telegram ID:</b> <code>{order.user_id}</code>\n\n"
-            f"📋 <b>Mahsulotlar:</b>\n{items_block}\n\n"
-            f"💰 <b>To'lov summasi:</b> <b>{format_price(order.total)}</b>"
-            f"{cargo_line}"
-            f"{cashback_line}\n\n"
-            f"👇 <b>Chekni tekshirib, quyidagi tugmalar orqali qabul qiling yoki rad eting:</b>"
-        )
-        caption = upgrade_to_premium_emojis(caption)
-        if len(caption) > 1020:
-            caption = caption[:1015] + "..."
+        shown_lines = list(item_lines)
+        extra_omitted = max(0, len(snapshot) - len(shown_lines))
+        raw_caption = _build_receipt_caption(shown_lines, extra_omitted)
+        premium_caption = upgrade_to_premium_emojis(raw_caption)
+        while len(premium_caption) > 1020 and len(shown_lines) > 1:
+            shown_lines.pop()
+            extra_omitted = max(0, len(snapshot) - len(shown_lines))
+            raw_caption = _build_receipt_caption(shown_lines, extra_omitted)
+            premium_caption = upgrade_to_premium_emojis(raw_caption)
+
+        plain_caption = strip_custom_emojis(raw_caption)
+        if len(premium_caption) > 1020:
+            # Drop trailing items completely to keep valid HTML without cutting tags
+            raw_caption = _build_receipt_caption([], len(snapshot))
+            premium_caption = upgrade_to_premium_emojis(raw_caption)
+            plain_caption = strip_custom_emojis(raw_caption)
 
         customer_profile_url = (
             f"https://t.me/{order.customer_username}"
@@ -267,40 +291,56 @@ async def notify_admins_new_receipt(order_id: int) -> None:
                         await bot.send_photo(
                             chat_id=aid,
                             photo=order.receipt_photo_id,
-                            caption=caption,
+                            caption=premium_caption,
                             reply_markup=admin_markup,
                             parse_mode="HTML",
                         )
                     except Exception as photo_err:
-                        logger.warning(f"send_photo failed for admin {aid} ({photo_err}), attempting send_document...")
-                        try:
-                            await bot.send_document(
-                                chat_id=aid,
-                                document=order.receipt_photo_id,
-                                caption=caption,
-                                reply_markup=admin_markup,
-                                parse_mode="HTML",
-                            )
-                        except Exception as doc_err:
-                            logger.warning(f"send_document failed for admin {aid} ({doc_err}), falling back to text message...")
-                            await bot.send_message(
-                                chat_id=aid,
-                                text=caption,
-                                reply_markup=admin_fallback_markup,
-                                parse_mode="HTML",
-                            )
+                        logger.warning(f"send_photo failed for admin {aid} ({photo_err}), trying fallbacks...")
+                        err_lower = str(photo_err).lower()
+                        is_file_type_err = any(k in err_lower for k in ("wrong remote file", "document", "type"))
+                        sent_ok = False
+                        if not is_file_type_err:
+                            try:
+                                await bot.send_photo(
+                                    chat_id=aid,
+                                    photo=order.receipt_photo_id,
+                                    caption=plain_caption,
+                                    reply_markup=admin_fallback_markup,
+                                    parse_mode="HTML",
+                                )
+                                sent_ok = True
+                            except Exception as photo_plain_err:
+                                logger.warning(f"plain send_photo failed for admin {aid}: {photo_plain_err}")
+                        if not sent_ok:
+                            try:
+                                await bot.send_document(
+                                    chat_id=aid,
+                                    document=order.receipt_photo_id,
+                                    caption=plain_caption,
+                                    reply_markup=admin_fallback_markup,
+                                    parse_mode="HTML",
+                                )
+                            except Exception as doc_err:
+                                logger.warning(f"send_document failed for admin {aid} ({doc_err}), falling back to text message...")
+                                await bot.send_message(
+                                    chat_id=aid,
+                                    text=plain_caption,
+                                    reply_markup=admin_fallback_markup,
+                                    parse_mode="HTML",
+                                )
                 else:
                     try:
                         await bot.send_message(
                             chat_id=aid,
-                            text=caption,
+                            text=premium_caption,
                             reply_markup=admin_markup,
                             parse_mode="HTML",
                         )
                     except Exception:
                         await bot.send_message(
                             chat_id=aid,
-                            text=caption,
+                            text=plain_caption,
                             reply_markup=admin_fallback_markup,
                             parse_mode="HTML",
                         )
@@ -354,9 +394,9 @@ async def broadcast_live_order_proof(bot_instance: Any, order: Order, target_cha
         qty = it.get("qty", 1)
         total_qty += qty
         size = it.get("size")
-        size_str = f" ({size})" if size else ""
+        size_str = f" ({escape(str(size))})" if size else ""
         color = it.get("color")
-        color_str = f" [{color}]" if color else ""
+        color_str = f" [{escape(str(color))}]" if color else ""
         item_lines.append(f"{TG_PRODUCT} <b>Mahsulot:</b> {escape(str(title))}{size_str}{color_str}")
 
     if not item_lines:
@@ -370,8 +410,8 @@ async def broadcast_live_order_proof(bot_instance: Any, order: Order, target_cha
     proof_text = (
         f"{TG_MOON} <b>Moonlight Alerts</b>\n\n"
         f"<blockquote>{TG_PARTY} <b>Yangi Xarid! / New Purchase!</b>\n\n"
-        f"{TG_PIN} <b>ID:</b> <code>{masked_id}</code>\n"
-        f"{TG_USER} <b>Xaridor:</b> <code>{masked_name}</code>\n"
+        f"{TG_PIN} <b>ID:</b> <code>{escape(str(masked_id))}</code>\n"
+        f"{TG_USER} <b>Xaridor:</b> <code>{escape(str(masked_name))}</code>\n"
         f"{products_block}\n"
         f"{TG_STAR} <b>Miqdor:</b> {total_qty} dona\n"
         f"{TG_MONEY} <b>Summa:</b> {format_price(order.total)}\n"

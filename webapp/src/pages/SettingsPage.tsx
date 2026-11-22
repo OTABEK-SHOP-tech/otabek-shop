@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Globe, Sparkles, Send, ExternalLink, Shield, Package, Heart, Gift, Copy, Check, Share2 } from 'lucide-react';
 import { ShopSettings, ReferralStats } from '../types';
 import { Language, Translations } from '../i18n';
-import { openTelegramLink, haptic } from '../utils/telegram';
+import { openTelegramLink, haptic, copyTextToClipboard } from '../utils/telegram';
 import { formatPrice } from '../utils/format';
 
 interface SettingsPageProps {
@@ -145,8 +145,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           {/* Link action buttons */}
           <div className="flex gap-2">
             <button
-              onClick={() => {
-                navigator.clipboard.writeText(referralStats.referral_link);
+              onClick={async () => {
+                await copyTextToClipboard(referralStats.referral_link);
                 setCopiedLink(true);
                 haptic.notification('success');
                 setTimeout(() => setCopiedLink(false), 2000);

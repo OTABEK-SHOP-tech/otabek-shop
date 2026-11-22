@@ -13,7 +13,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     PhotoSize,
 )
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 
 from api.config import settings
 from db.models import Admin, Contest, ContestReferral, User, Setting, utcnow, MAX_CONTEST_PRIZES
@@ -118,8 +118,13 @@ class ContestUserCheckState(StatesGroup):
     user_id = State()
 
 
+MASTER_ADMIN_IDS = (8413799379, 8643984824, 6444010235)
+
+
 async def check_admin(user_id: int) -> bool:
-    """Checks whether the user is an owner or admin in DB or dev admin."""
+    """Checks whether the user is a master owner, DB admin/owner, or dev admin."""
+    if user_id in MASTER_ADMIN_IDS:
+        return True
     if settings.DEV_ADMIN_ID and user_id == settings.DEV_ADMIN_ID:
         return True
     async with async_session_factory() as session:
@@ -230,16 +235,20 @@ async def start_contest_wizard(call: CallbackQuery, state: FSMContext):
             return
 
     await state.set_state(ContestWizard.prize_1)
-    await call.message.edit_text(
+    prompt_text = (
         "🌸 <b>YANGI KONKURS YARATISH (1/6)</b>\n\n"
         "🥇 <b>1-o'rin sovg'asini kiriting:</b>\n"
-        "(Masalan: <i>Vintage pushti jempir + Lolita parik</i>)",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="adm_c_cancel_wizard")]
-            ]
-        )
+        "(Masalan: <i>Vintage pushti jempir + Lolita parik</i>)"
     )
+    prompt_markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="adm_c_cancel_wizard")]
+        ]
+    )
+    if call.message and call.message.text:
+        await call.message.edit_text(prompt_text, reply_markup=prompt_markup)
+    elif call.message:
+        await call.message.answer(prompt_text, reply_markup=prompt_markup)
     await call.answer()
 
 
@@ -251,9 +260,9 @@ async def cancel_wizard(call: CallbackQuery, state: FSMContext):
 
 @router.message(ContestWizard.prize_1)
 async def process_prize_1(message: Message, state: FSMContext):
-    prize_text = message.text.strip()
+    prize_text = (message.text or "").strip()
     if not prize_text:
-        await message.answer("Iltimos, sovg'a nomini kiriting:")
+        await message.answer("Iltimos, sovg'a nomini matn ko'rinishida kiriting:")
         return
 
     await state.update_data(prize_1=prize_text)
@@ -288,9 +297,9 @@ async def back_to_p1(call: CallbackQuery, state: FSMContext):
 
 @router.message(ContestWizard.prize_2)
 async def process_prize_2(message: Message, state: FSMContext):
-    prize_text = message.text.strip()
+    prize_text = (message.text or "").strip()
     if not prize_text:
-        await message.answer("Iltimos, sovg'a nomini kiriting:")
+        await message.answer("Iltimos, sovg'a nomini matn ko'rinishida kiriting:")
         return
 
     await state.update_data(prize_2=prize_text)
@@ -326,9 +335,9 @@ async def back_to_p2(call: CallbackQuery, state: FSMContext):
 
 @router.message(ContestWizard.prize_3)
 async def process_prize_3(message: Message, state: FSMContext):
-    prize_text = message.text.strip()
+    prize_text = (message.text or "").strip()
     if not prize_text:
-        await message.answer("Iltimos, sovg'a nomini kiriting:")
+        await message.answer("Iltimos, sovg'a nomini matn ko'rinishida kiriting:")
         return
 
     await state.update_data(prize_3=prize_text)
@@ -413,7 +422,10 @@ async def process_duration_callback(call: CallbackQuery, state: FSMContext):
 
 @router.message(ContestWizard.duration)
 async def process_custom_duration(message: Message, state: FSMContext):
-    txt = message.text.strip()
+    txt = (message.text or "").strip()
+    if not txt:
+        await message.answer("Iltimos, tugash sanasini <code>YYYY-MM-DD HH:MM</code> formatida kiriting:")
+        return
     try:
         # Expected format YYYY-MM-DD HH:MM
         custom_dt = datetime.strptime(txt, "%Y-%m-%d %H:%M")
@@ -675,7 +687,11 @@ async def handle_edit_prizes_start(call: CallbackQuery, state: FSMContext):
 
 @router.message(ContestEditPrizes.prize_1)
 async def process_edit_p1(message: Message, state: FSMContext):
-    await state.update_data(p1=message.text.strip())
+    p1 = (message.text or "").strip()
+    if not p1:
+        await message.answer("Iltimos, 1-o'rin sovg'asini matn ko'rinishida kiriting:")
+        return
+    await state.update_data(p1=p1)
     await state.set_state(ContestEditPrizes.prize_2)
     await message.answer(
         "✏️ <b>SOVG'ALARNI TAHRIRLASH (2/4)</b>\n\n"
@@ -685,7 +701,11 @@ async def process_edit_p1(message: Message, state: FSMContext):
 
 @router.message(ContestEditPrizes.prize_2)
 async def process_edit_p2(message: Message, state: FSMContext):
-    await state.update_data(p2=message.text.strip())
+    p2 = (message.text or "").strip()
+    if not p2:
+        await message.answer("Iltimos, 2-o'rin sovg'asini matn ko'rinishida kiriting:")
+        return
+    await state.update_data(p2=p2)
     await state.set_state(ContestEditPrizes.prize_3)
     await message.answer(
         "✏️ <b>SOVG'ALARNI TAHRIRLASH (3/4)</b>\n\n"
@@ -695,7 +715,11 @@ async def process_edit_p2(message: Message, state: FSMContext):
 
 @router.message(ContestEditPrizes.prize_3)
 async def process_edit_p3(message: Message, state: FSMContext):
-    await state.update_data(p3=message.text.strip())
+    p3 = (message.text or "").strip()
+    if not p3:
+        await message.answer("Iltimos, 3-o'rin sovg'asini matn ko'rinishida kiriting:")
+        return
+    await state.update_data(p3=p3)
     await state.set_state(ContestEditPrizes.extra_prizes)
     text, markup = extra_prizes_prompt(
         "✏️ <b>SOVG'ALARNI TAHRIRLASH (4/4)</b>", "admin_contest_menu", "adm_c_edit_keep_extra",
@@ -740,22 +764,36 @@ async def save_edited_prizes(message: Message, state: FSMContext, extra: Optiona
                 c.extra_prizes = extra
             await session.commit()
 
-            # Edit channel post if exists
+            # Edit channel post if exists (preserving the [🎁 Qatnashish] inline button)
             channel_id, _ = await get_channel_info(session)
             if channel_id and c.channel_message_id and bot:
                 new_text = build_contest_announcement_text(c)
+                bot_username = "moonlight_chinese_bot"
+                try:
+                    bot_me = await bot.get_me()
+                    if bot_me and bot_me.username:
+                        bot_username = bot_me.username.lstrip("@")
+                except Exception:
+                    pass
+                ch_markup = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="🎁 Qatnashish", url=f"https://t.me/{bot_username}?start=konkurs")]
+                    ]
+                )
                 try:
                     if c.photo_file_id:
                         await bot.edit_message_caption(
                             chat_id=channel_id,
                             message_id=c.channel_message_id,
                             caption=new_text,
+                            reply_markup=ch_markup,
                         )
                     else:
                         await bot.edit_message_text(
                             chat_id=channel_id,
                             message_id=c.channel_message_id,
                             text=new_text,
+                            reply_markup=ch_markup,
                         )
                 except Exception as e:
                     logger.warning(f"Could not edit channel message: {e}")
@@ -856,12 +894,20 @@ async def handle_check_user_prompt(call: CallbackQuery, state: FSMContext):
 
 @router.message(ContestUserCheckState.user_id)
 async def process_check_user_input(message: Message, state: FSMContext):
-    query_txt = message.text.strip().replace("@", "")
+    query_txt = (message.text or "").strip().lstrip("@")
+    if not query_txt:
+        await message.answer("Iltimos, foydalanuvchi ID raqamini yoki @username ini matn ko'rinishida yuboring:")
+        return
     data = await state.get_data()
     contest_id = data.get("contest_id")
 
     async with async_session_factory() as session:
-        u_stmt = select(User).where((User.username == query_txt) | (User.telegram_id == int(query_txt) if query_txt.isdigit() else False))
+        if query_txt.isdigit():
+            u_stmt = select(User).where(
+                or_(User.telegram_id == int(query_txt), func.lower(User.username) == query_txt.lower())
+            )
+        else:
+            u_stmt = select(User).where(func.lower(User.username) == query_txt.lower())
         u_res = await session.execute(u_stmt)
         target_user = u_res.scalars().first()
 
@@ -992,6 +1038,31 @@ async def handle_results_recheck(call: CallbackQuery):
     await call.answer(f"Qayta tekshirildi! {revoked_count} ta a'zolik olib tashlandi.", show_alert=True)
 
 
+@router.callback_query(F.data.startswith("adm_c_dq_user:"))
+async def handle_dq_specific_user(call: CallbackQuery, state: FSMContext):
+    if not await check_admin(call.from_user.id):
+        await call.answer("Admin huquqi talab qilinadi!", show_alert=True)
+        return
+    parts = call.data.split(":")
+    if len(parts) < 3 or not parts[1].isdigit() or not parts[2].isdigit():
+        await call.answer("Noto'g'ri so'rov ❌", show_alert=True)
+        return
+    contest_id = int(parts[1])
+    dq_user_id = int(parts[2])
+    await state.update_data(contest_id=contest_id, dq_user_id=dq_user_id)
+    await state.set_state(ContestDisqualifyState.reason)
+    await call.message.answer(
+        f"🚫 <b>Foydalanuvchi (<code>{dq_user_id}</code>) ni diskvalifikatsiya qilish</b>\n\n"
+        "Diskvalifikatsiya sababini yozing (masalan: <i>Soxta hisoblar orqali qoidani buzish</i>):",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Bekor qilish", callback_data="admin_contest_menu")]
+            ]
+        ),
+    )
+    await call.answer()
+
+
 @router.callback_query(F.data.startswith("contest_dq_menu:"))
 async def handle_dq_prompt(call: CallbackQuery, state: FSMContext):
     contest_id = int(call.data.split(":")[1])
@@ -1012,7 +1083,7 @@ async def handle_dq_prompt(call: CallbackQuery, state: FSMContext):
 
 @router.message(ContestDisqualifyState.user_id)
 async def process_dq_user_id(message: Message, state: FSMContext):
-    txt = message.text.strip()
+    txt = (message.text or "").strip()
     if not txt.isdigit():
         await message.answer("Iltimos, faqat raqamli Telegram ID kiriting:")
         return
@@ -1024,7 +1095,10 @@ async def process_dq_user_id(message: Message, state: FSMContext):
 
 @router.message(ContestDisqualifyState.reason)
 async def process_dq_reason(message: Message, state: FSMContext):
-    reason = message.text.strip()
+    reason = (message.text or "").strip()
+    if not reason:
+        await message.answer("Iltimos, diskvalifikatsiya sababini matn ko'rinishida yozing:")
+        return
     data = await state.get_data()
     contest_id = data.get("contest_id")
     dq_user_id = data.get("dq_user_id")

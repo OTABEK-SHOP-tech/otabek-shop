@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 _confirm_throttle: Dict[int, float] = {}
 
 
+def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Ensures naive datetimes from SQLite/legacy rows are treated as UTC."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def get_user_referral_link(bot_username: str, user_id: int) -> str:
     """Generates the unique deep link for inviting friends."""
     clean_bot = bot_username.lstrip("@")
@@ -146,7 +153,7 @@ async def process_referral_start(
             select(Contest).where(Contest.status == "active").order_by(Contest.created_at.desc())
         )
         active_c = active_contest_res.scalars().first()
-        if active_c and active_c.ends_at > utcnow():
+        if active_c and _ensure_utc(active_c.ends_at) > utcnow():
             c_ref_res = await session.execute(
                 select(ContestReferral).where(
                     ContestReferral.contest_id == active_c.id,
@@ -184,32 +191,53 @@ async def confirm_referral(
     invitee_id: int,
     referrer_id: int,
     bot_username: str,
+    bypass_throttle: bool = False,
 ) -> Dict[str, Any]:
     """
-    Invitee clicked ✅ Tasdiqlash button.
+    Invitee clicked ✅ Tasdiqlash button (or joined channel directly via chat_member).
     Verifies channel membership with Telegram API, transitions status to 'confirmed',
     checks 5-friends milestones (5, 10, 15, ...), mints 20% discount coupons,
     and notifies referrer.
     """
-    now_ts = datetime.now().timestamp()
-    last_ts = _confirm_throttle.get(invitee_id, 0.0)
-    if now_ts - last_ts < 3.0:
-        return {
-            "status": "throttled",
-            "message": "Iltimos, 3 soniya kuting ⏳",
-        }
-    _confirm_throttle[invitee_id] = now_ts
-
-    # Query referral record
+    # Query referral record first so already-confirmed auto-joins don't hit throttle
     ref_res = await session.execute(
         select(Referral).where(Referral.invitee_id == invitee_id)
     )
     referral = ref_res.scalars().first()
     if not referral:
+        if not bypass_throttle:
+            now_ts = datetime.now().timestamp()
+            last_ts = _confirm_throttle.get(invitee_id, 0.0)
+            if now_ts - last_ts < 3.0:
+                return {
+                    "status": "throttled",
+                    "message": "Iltimos, 3 soniya kuting ⏳",
+                }
+            _confirm_throttle[invitee_id] = now_ts
         return {
             "status": "not_found",
             "message": "Taklif ma'lumoti topilmadi 🌸",
         }
+
+    personal_link = get_user_referral_link(bot_username, invitee_id)
+
+    if referral.status == "confirmed":
+        return {
+            "status": "success",
+            "message": "Obuna muvaffaqiyatli tasdiqlandi! 🌸",
+            "personal_link": personal_link,
+            "is_newly_confirmed": False,
+        }
+
+    if not bypass_throttle:
+        now_ts = datetime.now().timestamp()
+        last_ts = _confirm_throttle.get(invitee_id, 0.0)
+        if now_ts - last_ts < 3.0:
+            return {
+                "status": "throttled",
+                "message": "Iltimos, 3 soniya kuting ⏳",
+            }
+        _confirm_throttle[invitee_id] = now_ts
 
     channel_id, channel_url = await get_channel_info(session)
     if not channel_id:
@@ -236,8 +264,6 @@ async def confirm_referral(
             "message": "Siz hali kanalga obuna bo'lmadingiz 🙈",
             "channel_url": channel_url,
         }
-
-    personal_link = get_user_referral_link(bot_username, invitee_id)
 
     # If invitee was already in channel before, no point is awarded (honest accounting)
     if referral.was_member_before:
@@ -273,7 +299,7 @@ async def confirm_referral(
             select(Contest).where(Contest.status == "active").order_by(Contest.created_at.desc())
         )
         active_c = active_c_res.scalars().first()
-        if active_c and active_c.ends_at > utcnow():
+        if active_c and _ensure_utc(active_c.ends_at) > utcnow():
             await session.execute(
                 update(ContestReferral)
                 .where(
@@ -376,7 +402,17 @@ async def confirm_referral(
                             f"<i>(Ushbu kuponni savatda buyurtma berishda ishlatishingiz mumkin)</i>"
                         )
                 else:
-                    needed = 5 - (confirmed_count % 5)
+                    used_ms_res = await session.execute(
+                        select(ReferralCoupon.milestone).where(
+                            ReferralCoupon.user_id == referral.referrer_id,
+                            ReferralCoupon.is_used == True,
+                        )
+                    )
+                    used_milestones = {m for m in used_ms_res.scalars().all()}
+                    next_m = ((confirmed_count // 5) + 1) * 5
+                    while next_m in used_milestones:
+                        next_m += 5
+                    needed = max(0, next_m - confirmed_count)
                     msg_lines.append(f"⏳ Keyingi 20% chegirma kuponigacha: <b>{needed} ta do'st</b> qoldi! ✨")
 
                 await bot.send_message(
@@ -509,10 +545,6 @@ async def get_user_referral_stats(
     )
     revoked_count = r_res.scalar() or 0
 
-    # Milestone calculation: every 5 confirmed friends
-    next_milestone = ((confirmed_count // 5) + 1) * 5
-    friends_needed_for_next = next_milestone - confirmed_count
-
     # Coupons
     coupons_res = await session.execute(
         select(ReferralCoupon)
@@ -520,6 +552,13 @@ async def get_user_referral_stats(
         .order_by(ReferralCoupon.milestone.asc())
     )
     all_coupons = coupons_res.scalars().all()
+
+    # Milestone calculation: every 5 confirmed friends, skipping already-used milestones
+    used_milestones = {cp.milestone for cp in all_coupons if cp.is_used}
+    next_milestone = ((confirmed_count // 5) + 1) * 5
+    while next_milestone in used_milestones:
+        next_milestone += 5
+    friends_needed_for_next = max(0, next_milestone - confirmed_count)
 
     available_coupons = []
     used_coupons = []
@@ -608,7 +647,7 @@ async def validate_and_calculate_coupon_discount(
             return {"valid": False, "message": "Kupon topilmadi yoki faol emas ❌"}
 
         now = utcnow()
-        if promo.valid_until and promo.valid_until < now:
+        if promo.valid_until and _ensure_utc(promo.valid_until) < now:
             return {"valid": False, "message": "Kupon muddati tugagan ❌"}
 
         if promo.max_uses and promo.used_count >= promo.max_uses:
@@ -616,6 +655,24 @@ async def validate_and_calculate_coupon_discount(
 
         if not cart_items:
             return {"valid": False, "message": "Savat bo'sh 🛒"}
+
+        def _extract_item_price_qty(it):
+            if hasattr(it, "product_price") or hasattr(it, "price"):
+                p = getattr(it, "product_price", getattr(it, "price", 0))
+                q = getattr(it, "qty", 1)
+            else:
+                p = it.get("product_price", it.get("price", 0))
+                q = it.get("qty", 1)
+            return int(p or 0), int(q or 1)
+
+        if promo.min_order_amount:
+            cart_subtotal = sum(p * q for p, q in (_extract_item_price_qty(it) for it in cart_items))
+            if cart_subtotal < promo.min_order_amount:
+                min_fmt = f"{promo.min_order_amount:,}".replace(",", " ")
+                return {
+                    "valid": False,
+                    "message": f"Ushbu promokod uchun minimal buyurtma summasi {min_fmt} so'm ❌",
+                }
 
         target_item = None
         if selected_product_id:

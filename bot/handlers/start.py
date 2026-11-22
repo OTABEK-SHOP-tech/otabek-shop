@@ -10,7 +10,7 @@ from sqlalchemy import select
 from api.config import settings
 from api.services.formatters import format_price, calculate_cargo, strip_private_pricing_data
 from bot.keyboards.reply import get_main_reply_keyboard, make_webapp_inline_btn
-from bot.services.premium_emojis import upgrade_to_premium_emojis
+from bot.services.premium_emojis import upgrade_to_premium_emojis, strip_custom_emojis
 from bot.services.subscription import (
     check_dual_subscription,
     get_subscription_markup,
@@ -78,18 +78,52 @@ async def send_welcome_greeting(target: Message, user_id: int):
         ]
     )
 
+    plain_webapp_btn = (
+        InlineKeyboardButton(text="🛍️ Do'konni ochish", web_app=WebAppInfo(url=settings.WEBAPP_URL))
+        if (settings.WEBAPP_URL and settings.WEBAPP_URL.startswith("https://"))
+        else InlineKeyboardButton(text="🛍️ Do'konni ochish", url="https://t.me/moonlight_chinese_shop")
+    )
+    plain_markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [plain_webapp_btn],
+            [
+                InlineKeyboardButton(text="📢 Rasmiy kanal", url=channel_link),
+                InlineKeyboardButton(text="💬 Rasmiy guruh", url=chat_link),
+            ],
+            [
+                InlineKeyboardButton(text="💌 Bog'lanish", url=contact_link),
+            ],
+        ]
+    )
+
     if banner_path.is_file():
+        photo_sent = False
         try:
             await target.answer_photo(
                 photo=FSInputFile(str(banner_path)),
                 caption=greeting_text,
                 reply_markup=markup,
             )
-            return
+            photo_sent = True
         except Exception:
-            pass
+            try:
+                await target.answer_photo(
+                    photo=FSInputFile(str(banner_path)),
+                    caption=strip_custom_emojis(raw_greeting_text),
+                    reply_markup=plain_markup,
+                )
+                photo_sent = True
+            except Exception:
+                photo_sent = False
 
-    await target.answer(greeting_text, reply_markup=get_main_reply_keyboard())
+        if photo_sent:
+            await target.answer(
+                "👇 Quyidagi menyudan kerakli bo'limni tanlang (20% chegirma taklif tizimi va konkurs shu yerda) ✨",
+                reply_markup=get_main_reply_keyboard(),
+            )
+            return
+
+    await target.answer(strip_custom_emojis(raw_greeting_text), reply_markup=get_main_reply_keyboard())
 
 
 async def _check_dual_sub_or_prompt(message: Message) -> bool:
@@ -123,7 +157,7 @@ async def send_product_deep_link(message: Message, prod_id: int) -> bool:
             cargo = calculate_cargo(product.weight_grams)
             clean_title = strip_private_pricing_data(product.title) or product.title
             clean_desc = strip_private_pricing_data(product.description or "")
-            desc_text = f"\n\n{clean_desc}" if clean_desc else ""
+            desc_text = f"\n\n{escape(str(clean_desc))}" if clean_desc else ""
             stock_badge = "" if product.in_stock else "\n\n❌ <b>Sotildi (Hozirda mavjud emas)</b>"
 
             contact_val = "MOONLIGHT_ADMINNN"
@@ -305,6 +339,10 @@ async def handle_start(message: Message, command: CommandObject):
         except ValueError:
             referrer_id = 0
 
+        if not referrer_id:
+            if not await _check_dual_sub_or_prompt(message):
+                return
+
         if referrer_id:
             from bot.services.referral_service import process_referral_start, get_user_referral_link
             async with async_session_factory() as session:
@@ -322,12 +360,16 @@ async def handle_start(message: Message, command: CommandObject):
                 if not ref_result.get("valid"):
                     reason = ref_result.get("reason")
                     if reason in ("existing_user", "already_referred_by_other"):
+                        if not await _check_dual_sub_or_prompt(message):
+                            return
                         await message.answer(
                             ref_result.get("message"),
                             reply_markup=get_main_reply_keyboard(),
                         )
                         return
-                    # Malformed, self, or bot payloads safely continue to regular greeting
+                    # Malformed, self, or bot payloads must still pass mandatory dual subscription gate
+                    if not await _check_dual_sub_or_prompt(message):
+                        return
                 else:
                     channel_url = ref_result.get("channel_url", "https://t.me/moonlight_chinese_shop")
                     was_member_before = ref_result.get("was_member_before", False)
@@ -401,16 +443,24 @@ async def handle_start(message: Message, command: CommandObject):
             if not ref_result.get("valid"):
                 reason = ref_result.get("reason")
                 if reason == "no_active_contest":
+                    if not await _check_dual_sub_or_prompt(message):
+                        return
                     await message.answer(
                         "🌸 <b>Hozircha faol konkurs yo'q</b> 🎀\nLekin do'konimizdan bahramand bo'lishingiz mumkin!",
                         reply_markup=get_main_reply_keyboard(),
                     )
+                    return
                 elif reason == "existing_user":
+                    if not await _check_dual_sub_or_prompt(message):
+                        return
                     await message.answer(
                         ref_result.get("message"),
                         reply_markup=get_main_reply_keyboard(),
                     )
-                # Malformed, self, or invalid payloads are safely ignored and continue to regular greeting
+                    return
+                # Malformed, self, or invalid payloads must still pass mandatory dual subscription gate
+                if not await _check_dual_sub_or_prompt(message):
+                    return
             else:
                 contest = ref_result["contest"]
                 channel_url = ref_result.get("channel_url", "https://t.me/moonlight_chinese_shop")

@@ -1,10 +1,11 @@
+from html import escape
 import logging
 import time
 from typing import Dict
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from bot.loader import bot
 from bot.services.premium_emojis import (
@@ -12,7 +13,7 @@ from bot.services.premium_emojis import (
     strip_custom_emojis,
     PREMIUM_BTN_STAR_ID,
 )
-from db.models import Order, Admin, User, Setting
+from db.models import Order, Admin, User, Setting, Referral, ReferralCoupon, PromoCode
 from db.session import async_session_factory
 from bot.handlers.admin import is_user_admin
 
@@ -20,24 +21,37 @@ router = Router(name="orders")
 router.message.filter(F.chat.type == "private")
 logger = logging.getLogger(__name__)
 
-PERMANENT_ADMINS = {8643984824, 8413799379}
+PERMANENT_ADMINS = {8643984824, 8413799379, 6444010235}
 _processed_receipt_media_groups: Dict[str, float] = {}
 
 
 async def edit_admin_message(callback: CallbackQuery, status_badge: str, admin_name: str) -> None:
     """
     Safely edits the admin's message after an action, handling photos, documents, and text messages.
+    Avoids slicing HTML tags mid-entity when captions approach Telegram's length limits.
     """
+    safe_admin = escape(str(admin_name or "Admin"))
+    suffix = f"\n\n{status_badge} (Admin: {safe_admin})"
     try:
         if callback.message.caption is not None or callback.message.photo or callback.message.document:
-            orig = callback.message.html_text or callback.message.caption or ""
-            new_caption = f"{orig}\n\n{status_badge} (Admin: {admin_name})"
+            orig_html = callback.message.html_text or callback.message.caption or ""
+            new_caption = f"{orig_html}{suffix}"
             if len(new_caption) > 1020:
-                new_caption = new_caption[:1015] + "..."
+                plain_body = callback.message.caption or strip_custom_emojis(orig_html)
+                max_body = max(0, 1010 - len(suffix))
+                if len(plain_body) > max_body:
+                    plain_body = plain_body[:max_body] + "..."
+                new_caption = f"{escape(plain_body)}{suffix}"
             await callback.message.edit_caption(caption=new_caption, reply_markup=None, parse_mode="HTML")
         else:
-            orig = callback.message.html_text or callback.message.text or ""
-            new_text = f"{orig}\n\n{status_badge} (Admin: {admin_name})"
+            orig_html = callback.message.html_text or callback.message.text or ""
+            new_text = f"{orig_html}{suffix}"
+            if len(new_text) > 4090:
+                plain_body = callback.message.text or strip_custom_emojis(orig_html)
+                max_body = max(0, 4080 - len(suffix))
+                if len(plain_body) > max_body:
+                    plain_body = plain_body[:max_body] + "..."
+                new_text = f"{escape(plain_body)}{suffix}"
             await callback.message.edit_text(text=new_text, reply_markup=None, parse_mode="HTML")
     except Exception as e:
         logger.warning(f"Could not edit admin message: {e}")
@@ -221,6 +235,9 @@ async def handle_order_accept(callback: CallbackQuery):
         if order.status == "accepted":
             await callback.answer("Buyurtma allaqachon qabul qilingan", show_alert=True)
             return
+        if order.status == "cancelled":
+            await callback.answer("❌ Bekor qilingan buyurtmani qabul qilib bo'lmaydi", show_alert=True)
+            return
 
         order.status = "accepted"
 
@@ -336,6 +353,9 @@ async def handle_order_cancel(callback: CallbackQuery):
         if order.status == "cancelled":
             await callback.answer("Buyurtma allaqachon bekor qilingan", show_alert=True)
             return
+        if order.status == "accepted":
+            await callback.answer("❌ Qabul qilingan buyurtmani bekor qilib bo'lmaydi", show_alert=True)
+            return
 
         order.status = "cancelled"
 
@@ -345,6 +365,40 @@ async def handle_order_cancel(callback: CallbackQuery):
             u_obj = res_u.scalars().first()
             if u_obj:
                 u_obj.cashback_balance += order.cashback_used
+
+        # Restore referral coupon & promo code usage when order is cancelled
+        if order.promo_code:
+            rc_res = await session.execute(
+                select(ReferralCoupon).where(
+                    (ReferralCoupon.order_id == order.id)
+                    | ((ReferralCoupon.code == order.promo_code) & (ReferralCoupon.user_id == order.user_id))
+                )
+            )
+            rc_obj = rc_res.scalars().first()
+            should_reactivate_promo = True
+            if rc_obj:
+                rc_obj.is_used = False
+                rc_obj.used_at = None
+                rc_obj.order_id = None
+                rc_obj.product_id = None
+                rc_obj.discount_amount = 0
+
+                confirmed_cnt = (
+                    await session.execute(
+                        select(func.count(Referral.id)).where(
+                            Referral.referrer_id == rc_obj.user_id,
+                            Referral.status == "confirmed",
+                        )
+                    )
+                ).scalar() or 0
+                should_reactivate_promo = confirmed_cnt >= rc_obj.milestone
+
+            pr_res = await session.execute(select(PromoCode).where(PromoCode.code == order.promo_code))
+            pr_obj = pr_res.scalars().first()
+            if pr_obj:
+                pr_obj.used_count = max(0, pr_obj.used_count - 1)
+                if should_reactivate_promo and (not pr_obj.max_uses or pr_obj.used_count < pr_obj.max_uses):
+                    pr_obj.is_active = True
 
         await session.commit()
         customer_user_id = order.user_id

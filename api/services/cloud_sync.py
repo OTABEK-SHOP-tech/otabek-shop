@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import time
 from typing import Optional, Dict, Any
 
@@ -35,6 +36,10 @@ async def sync_product_to_cloud(product: Product) -> bool:
     Asynchronously syncs a newly created product from local SQLite to the cloud Mini App (Render).
     Guarantees products uploaded via Telegram bot appear immediately in the Mini App.
     """
+    # Avoid self-HTTP loop when already running on Render
+    if os.getenv("RENDER") == "true" or os.getenv("RENDER_SERVICE_ID"):
+        return True
+
     base_url = (settings.WEBAPP_URL or "").rstrip("/")
     if not base_url or not base_url.startswith("https://"):
         return False
